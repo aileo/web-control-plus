@@ -26,24 +26,16 @@ function compact(id) {
   return id.split('_').reduce((str, part) => str + part[0], '');
 }
 
-// workaround to call after association
-let addCallback = () => {};
-client.on('discover', hub => {
-  addCallback(hub);
-});
-
 export default {
   /**
    * Associate new hub to the application
    * @param {Function} callback
    */
   add(callback = (() => {})) {
-    addCallback = async hub => {
-      // prevent multiple calls
-      addCallback = () => {};
+    client.once('discover', async hub => {
       await hub.connect();
       callback(null, { hub });
-    };
+    });
     client.scan();
   },
 
