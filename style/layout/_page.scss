@@ -7,32 +7,5 @@
     flex-flow: row wrap;
     align-items: stretch;
     align-content: stretch;
-
-    >div {
-      &.side {
-        background-color: $light;
-        box-shadow: 0 0 .2rem $dark;
-        z-index: 10;
-
-        &.left {
-          width: 10vmin;
-          height: 90vmin;
-          order: 1;
-        }
-
-        &.right {
-          order: 3;
-          flex-grow: 1;
-          min-width: 10vmin;
-        }
-      }
-
-      &.center {
-        order: 2;
-        width: 90vmin;
-        height: 90vmin;
-      }
-    }
-
   }
 }

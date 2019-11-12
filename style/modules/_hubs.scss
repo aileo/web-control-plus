@@ -1,0 +1,176 @@
+.hubs {
+  flex-grow: 0;
+  width: 5rem;
+  background-color: $light;
+  box-shadow: 0 0 .2rem $dark;
+  z-index: 10;
+
+  &.list-group{
+    border-radius: 0;
+    border-bottom: 0;
+
+    >.list-group-item {
+      height: 5rem;
+      border-radius: 0;
+      border-left: 0;
+      border-right: 0;
+      padding: 0;
+      border-bottom: 1px solid $dark;
+      position: relative;
+
+      &:nth-child(1) {
+        border-top: 0;
+      }
+
+      &.add {
+        border-bottom: 0;
+        color: $primary;
+        font-size: 3rem;
+        line-height: 2rem;
+        text-align: center;
+        background: $light;
+
+        &:hover, &:focus {
+          background-color: $primary;
+          color: $light;
+        }
+      }
+
+      &.hub {
+        button.primary {
+          display: flex;
+          flex-flow: row nowrap;
+          align-items: stretch;
+          height: 100%;
+          width: 100%;
+
+          // override button style
+          padding: 0px;
+          border: 0px;
+          background-color: transparent;
+
+          .info {
+            height: calc(5rem - 2px);
+            flex-grow: 1;
+            display: flex;
+            flex-flow: column nowrap;
+            align-items: stretch;
+
+            > * {
+              flex-grow: 0;
+              text-align: center;
+              &.header {
+                background-color: transparent;
+              }
+
+              &.body {
+                flex-grow: 1;
+                font-weight: bold;
+                line-height: 3rem;
+              }
+
+              &.footer {
+                background-color: transparent;
+              }
+            }
+          }
+
+          .color {
+            width: 0.5rem;
+          }
+        }
+
+        div.secondary {
+          display: none;
+          position: absolute;
+          flex-flow: row nowrap;
+          align-items: stretch;
+          background-color: $light;
+
+          height: calc(100% + 2px);
+          left: 5rem;
+          top: -1px;
+          box-shadow: 0 0 .2rem $dark;
+          border: 1px solid $dark;
+          border-left: 0;
+          border-radius: 0 .3rem .3rem 0;
+
+          &:before {
+            content: "";
+            position: absolute;
+            height: 1rem;
+            width: .5rem;
+            border-style: solid;
+            border-color: transparent $light;
+            border-width: .5em .5em .5em 0;
+            margin: -.5em;
+            top: 50%;
+          }
+
+          > * {
+            height: 100%;
+            width: 5rem;
+            border: 0;
+            border-left: 1px solid $dark;
+
+            &:nth-child(1) {
+              border-left: 0;
+            }
+
+            &.port {
+              display: flex;
+              flex-flow: column nowrap;
+              align-items: stretch;
+
+              .name {
+                text-align: center;
+                background-color: $dark;
+                padding: .2rem 0;
+                font-weight: bold;
+                color: $light;
+              }
+
+              .type {
+                flex-grow: 1;
+                text-align: center;
+                display: flex;
+                flex-flow: column nowrap;
+                justify-content: center;
+                align-items: center;
+              }
+            }
+
+            &.button {
+              display: flex;
+              flex-flow: column nowrap;
+              justify-content: center;
+              align-items: center;
+              font-size: 2em;
+              color: $dark;
+              background-color: transparent;
+
+              &.config:hover, &.config:focus {
+                background-color: $primary;
+                color: $light;
+              }
+
+              &.disconnect:hover, &.disconnect:focus {
+                background-color: $warning;
+              }
+
+              &.shutdown:hover, &.shutdown:focus {
+                background-color: $danger;
+                color: $light;
+              }
+            }
+          }
+        }
+
+        &:hover div.secondary,
+        button.primary:focus + div.secondary {
+          display: flex;
+        }
+      }
+    }
+  }
+}

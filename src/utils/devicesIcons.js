@@ -1,0 +1,33 @@
+import {
+  DeviceUnknown,
+  Autorenew,
+  TouchApp,
+  Speed,
+  ScreenRotation,
+  MusicNote,
+  WbSunny,
+  ColorLens,
+  DirectionsRailway,
+  KeyboardTab,
+} from '@material-ui/icons';
+
+export default {
+  UNKNOWN: DeviceUnknown,
+  BASIC_MOTOR: Autorenew,
+  TRAIN_MOTOR: DirectionsRailway,
+  LED_LIGHTS: WbSunny,
+  BOOST_LED: WbSunny,
+  WEDO2_TILT: ScreenRotation,
+  WEDO2_DISTANCE: KeyboardTab,
+  BOOST_DISTANCE: KeyboardTab,
+  BOOST_TACHO_MOTOR: Autorenew,
+  BOOST_MOVE_HUB_MOTOR: Autorenew,
+  BOOST_TILT: ScreenRotation,
+  DUPLO_TRAIN_BASE_MOTOR: DirectionsRailway,
+  DUPLO_TRAIN_BASE_SPEAKER: MusicNote,
+  DUPLO_TRAIN_BASE_COLOR: ColorLens,
+  DUPLO_TRAIN_BASE_SPEEDOMETER: Speed,
+  CONTROL_PLUS_LARGE_MOTOR: Autorenew,
+  CONTROL_PLUS_XLARGE_MOTOR: Autorenew,
+  POWERED_UP_REMOTE_BUTTON: TouchApp,
+};
