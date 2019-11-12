@@ -4,6 +4,7 @@ import state from './state';
 import clients from './clients';
 import logger from '../utils/logger';
 
+// Actions collections
 import navigation from './actions/navigation';
 import hubs from './actions/hubs';
 
