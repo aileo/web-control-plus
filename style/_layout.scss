@@ -1,0 +1,17 @@
+.layout {
+  @extend .container-fluid;
+  height: 100vh;
+
+  display: flex;
+  flex-flow: column nowrap;
+  align-items: stretch;
+
+  >* {
+    @extend .row;
+
+    @import './layout/modal';
+    @import './layout/header';
+    @import './layout/footer';
+    @import './layout/page';
+  }
+}

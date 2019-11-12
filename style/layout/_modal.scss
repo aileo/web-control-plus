@@ -1,0 +1,8 @@
+&.modal {
+  margin: 0;
+  display: flex;
+  flex-flow: column;
+  align-items: center;
+  justify-content: space-around;
+  background-color: rgba($primary, 0.5);
+}

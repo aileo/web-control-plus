@@ -1,0 +1,10 @@
+&.footer {
+  @extend .navbar;
+  @extend .navbar-dark;
+  @extend .bg-dark;
+
+  height: 2rem;
+  flex-grow: 0;
+  box-shadow: 0 0 .2rem $dark;
+  z-index: 20;
+}

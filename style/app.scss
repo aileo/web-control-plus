@@ -1,0 +1,19 @@
+@import './bootstrap-override';
+@import '../node_modules/bootstrap-scss/bootstrap.scss';
+
+@import './layout';
+
+html, body {
+  padding: 0;
+  margin: 0;
+  min-height: 100%;
+  height: 100vh;
+}
+
+#root {
+  min-height: 100%;
+}
+
+* {
+  transition: background-color 0.3s;
+}
