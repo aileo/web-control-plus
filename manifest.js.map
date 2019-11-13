@@ -1,0 +1,1 @@
+{"version":3,"sources":["manifest.json"],"names":["module","exports"],"mappings":"AAAAA,MAAM,CAACC,OAAP,GAAiB;AACf,aAAW,YADI;AAEf,iBAAe;AAFA,CAAjB","file":"manifest.js","sourceRoot":"..","sourcesContent":["module.exports = {\n  \"display\": \"minimal-ui\",\n  \"orientation\": \"landscape\"\n};"]}
