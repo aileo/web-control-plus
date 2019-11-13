@@ -9,6 +9,7 @@ const state = new Baobab({
     },
   },
   hubs: {},
+  devices: {},
 });
 
 export default state;

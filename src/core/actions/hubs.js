@@ -1,65 +1,155 @@
 import { waterfall } from 'async';
-import { values } from 'lodash';
+import { pick } from 'lodash';
 
-const bootstrapEvents = [
+const registerEvents = [
   'attach',
   'detach',
 ];
+const deviceEvents = [
+  'accel',
+  'button',
+  'color',
+  'colorAndDistance',
+  'distance',
+  'rotate',
+  'speed',
+  'temp',
+  'tilt',
+];
 
 const hubTimeout = {};
+
+/**
+ * Helper to get hub's system data
+ * @param {Object} hub
+ */
+function getSystemInfo(hub) {
+  return pick(hub, [
+    'firmware',
+    'batteryLevel',
+    'current',
+    'voltage',
+    'rssi',
+  ]);
+}
 
 export default {
   /**
    * Search for new hub to add
    */
   add({ callback, clients, actions }) {
-    waterfall([
-      cb => clients.lego.add(cb),
-      ({ hub }, cb) => actions.hubs.update({ uuid: hub.uuid }, cb),
-      (hub, cb) => actions.hubs.bootsrap({ uuid: hub.uuid }, cb),
-    ], callback);
+    waterfall(
+      [
+        // Get hub from client scan
+        cb => clients.lego.add(cb),
+        // register new hub in state
+        ({ hub }, cb) => actions.hubs.register({ uuid: hub.uuid }, cb),
+        // Bootstrap hub (led color, event listeners)
+        (hub, cb) => actions.hubs.bootsrap({ uuid: hub.uuid }, cb),
+        // Init hub refresh timeout
+        (hub, cb) => {
+          actions.hubs.resetTimeout({ uuid: hub.uuid });
+          cb(null, hub);
+        },
+      ],
+      callback
+    );
+  },
+
+  /**
+   * Add hub information to state
+   * @param {String} uuid
+   */
+  register({ callback, clients, state, actions }, { uuid }) {
+    const { lego } = clients;
+    waterfall(
+      [
+        // get hub from client
+        cb => lego.get(uuid, cb),
+        (hub, cb) => {
+          // Add generic hub information to state
+          state.select('hubs').set(uuid, {
+            uuid: hub.uuid,
+            name: hub.name,
+            type: lego.constToObject('HubType', hub.getHubType()),
+            color: lego.colorFromText(hub.uuid).hex,
+            system: getSystemInfo(hub),
+          });
+
+          // register devices
+          Object.keys(hub._ports).forEach(portName => {
+            actions.devices.register({ hubUuid: hub.uuid, portName });
+          });
+
+          state.once('update', () => cb(null, hub));
+        },
+      ],
+      callback
+    );
+  },
+
+  /**
+   * Set builtin LED to color determined from uuid
+   * @param {String} uuid
+   */
+  setLED({ clients, callback }, { uuid }) {
+    const { lego } = clients;
+    waterfall(
+      [
+        // get hub from client
+        cb => lego.get(uuid, cb),
+        (hub, cb) => {
+          const { rgb } = lego.colorFromText(hub.uuid);
+          lego.action(
+            hub.uuid,
+            'setLEDRGB',
+            // HACK : green and blue leds are brighter than red ones
+            // Lower G & B values then to match the screen display
+            [rgb.r, rgb.g * 0.5, rgb.b * 0.5],
+            err => cb(err, hub)
+          );
+        },
+      ],
+      callback
+    );
   },
 
   /**
    * Apply some initial action to newly associated hub
+   * @param {String} uuid
    */
-  bootsrap({ clients, callback, actions, logger }, { uuid }) {
-    logger.info('bootsrap hub', { uuid });
+  bootsrap({ actions, callback }, { uuid }) {
     waterfall(
       [
-        // get hub from client
-        cb => clients.lego.get(uuid, cb),
-
+        // Set hub LED from uuid
+        cb => actions.hubs.setLED({ uuid }, cb),
         // Unsuscribe to TILT event (as they spam, at least on BOOST MOVE HUB)
+        (hub, cb) => hub.unsubscribe('TILT').then(
+          () => cb(null, hub),
+          // ignore error on this one
+          () => cb(null, hub)
+        ),
         (hub, cb) => {
-          if (hub._ports.TILT) {
-            logger.info('Disable tilt update', { uuid });
-            return hub.unsubscribe('TILT').then(
-              () => cb(null, hub),
-              err => cb(err)
-            );
-          }
-
-          return cb(null, hub);
-        },
-
-        // apply led color from uuid
-        (hub, cb) => {
-          const { rgb } = clients.lego.colorFromText(hub.uuid);
-          clients.lego.action(hub.uuid, 'setLEDRGB', values(rgb), err => {
-            cb(err, hub);
+          // Attach to some event (registerEvents)
+          // to refresh hub's devices local state
+          registerEvents.forEach(event => {
+            hub.on(event, portName => actions.devices.register({
+              hubUuid: hub.uuid,
+              portName,
+            }));
           });
-        },
 
-        // Attach to some event (bootstrapEvents) to refresh hub local state
-        (hub, cb) => {
-          logger.info('Bootstrap events', { uuid });
-          bootstrapEvents.forEach(event => {
-            hub.on(event, (...data) => {
-              logger.debug('Event', { event, data });
-              actions.hubs.update({ uuid });
-            });
+          // Attach to some event (registerEvents)
+          // to refresh hub's devices measurements state
+          deviceEvents.forEach(event => {
+            hub.on(event, (portName, ...data) => actions.devices.update({
+              hubUuid: hub.uuid,
+              portName,
+              event,
+              data,
+            }));
           });
+
           cb(null, hub);
         },
       ],
@@ -95,7 +185,7 @@ export default {
     /**
      * reset hub refresh timeout
      * prevent this method from being call too often when already call from
-     * an event.
+     * an event (updateEvents).
      */
     actions.hubs.resetTimeout({ uuid });
 
@@ -106,33 +196,9 @@ export default {
       }
 
       // update state with collected data
-      state.set(['hubs', uuid], {
-        uuid: hub.uuid,
-        name: hub.name,
-        type: lego.constToObject('HubType', hub.getHubType()),
-        color: lego.colorFromText(hub.uuid).hex,
-        system: {
-          firmware: hub.firmwareVersion,
-          batteryLevel: hub.batteryLevel,
-          current: hub.current,
-          voltage: hub.voltage,
-          rssi: hub.rssi,
-        },
-        /**
-         * Ugly part that should be refined
-         */
-        ports: Object.keys(hub._ports).reduce((ports, name) => {
-          ports[name] = {
-            name,
-            uuid: `${hub.uuid}-${name}`,
-            connected: hub._ports[name].connected,
-            busy: hub._ports[name].busy,
-            type: lego.constToObject('DeviceType', hub._ports[name].type),
-            value: hub._ports[name].value,
-          };
-          return ports;
-        }, {}),
-      });
+      const hubData = state.select(['hubs', uuid]);
+      hubData.set('name', hub.name);
+      hubData.set('system', getSystemInfo(hub));
 
       return callback(null, hub);
     });

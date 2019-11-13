@@ -1,4 +1,5 @@
 import React, { Component } from 'react';
+import { branch } from 'baobab-react/higher-order';
 import { values } from 'lodash';
 
 import Build from '@material-ui/icons/Build';
@@ -8,7 +9,7 @@ import PowerSettingsNew from '@material-ui/icons/PowerSettingsNew';
 import actionsWrapper from '../../../utils/mixin.actions.branch';
 
 import Battery from './Battery';
-import Port from './Port';
+import Device from './Device';
 
 class Hub extends Component {
   constructor() {
@@ -37,7 +38,9 @@ class Hub extends Component {
   }
 
   render() {
-    const { name, color, type, system, ports } = this.props;
+    const { uuid, name, color, type, system, ports } = this.props;
+    const devices = ports[uuid];
+
     return (
       <div className="list-group-item hub">
         <button className="primary" type="button">
@@ -52,8 +55,8 @@ class Hub extends Component {
         </button>
         <div className="secondary">
           {
-            values(ports).map(port => (
-              <Port key={ port.name } { ...port } />
+            values(devices).map(device => (
+              <Device key={ device.port } { ...device } />
             )).concat([
               <button
                 key="config"
@@ -90,4 +93,6 @@ class Hub extends Component {
   }
 }
 
-export default actionsWrapper(['hubs', 'navigation'], Hub);
+export default branch({
+  ports: ['devices'],
+}, actionsWrapper(['hubs', 'navigation'], Hub));
