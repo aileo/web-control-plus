@@ -1,5 +1,5 @@
 import React from 'react';
-import { LinkOff } from '@material-ui/icons';
+import LinkOff from '@material-ui/icons/LinkOff';
 
 import icons from '../../../utils/devicesIcons';
 

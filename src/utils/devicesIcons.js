@@ -1,15 +1,13 @@
-import {
-  DeviceUnknown,
-  Autorenew,
-  TouchApp,
-  Speed,
-  ScreenRotation,
-  MusicNote,
-  WbSunny,
-  ColorLens,
-  DirectionsRailway,
-  KeyboardTab,
-} from '@material-ui/icons';
+import DeviceUnknown from '@material-ui/icons/DeviceUnknown';
+import Autorenew from '@material-ui/icons/Autorenew';
+import TouchApp from '@material-ui/icons/TouchApp';
+import Speed from '@material-ui/icons/Speed';
+import ScreenRotation from '@material-ui/icons/ScreenRotation';
+import MusicNote from '@material-ui/icons/MusicNote';
+import WbSunny from '@material-ui/icons/WbSunny';
+import ColorLens from '@material-ui/icons/ColorLens';
+import DirectionsRailway from '@material-ui/icons/DirectionsRailway';
+import KeyboardTab from '@material-ui/icons/KeyboardTab';
 
 export default {
   UNKNOWN: DeviceUnknown,

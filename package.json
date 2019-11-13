@@ -8,7 +8,10 @@
     "lint:js": "eslint --ext .jsx,.js src/** --fix",
     "lint:scss": "stylelint style/**",
     "lint": "npm run lint:scss && npm run lint:js",
-    "build": "parcel build --public-url . ./index.html --out-dir dist --out-file app.html --experimental-scope-hoisting"
+    "build:clean": "rm -r dist/*",
+    "build:src": "parcel build --public-url . ./index.html --out-dir dist",
+    "build": "npm run build:clean && npm run build:src",
+    "publish": "npm run build && gh-pages -d dist"
   },
   "author": "aileo",
   "license": "MIT",
@@ -37,6 +40,7 @@
     "eslint-plugin-react": "^7.16.0",
     "eslint-plugin-react-hooks": "^1.7.0",
     "express": "^4.17.1",
+    "gh-pages": "^2.1.1",
     "http-proxy-middleware": "^0.19.1",
     "parcel-bundler": "^1.12.3",
     "parcel-plugin-asset-copier": "^1.0.0",

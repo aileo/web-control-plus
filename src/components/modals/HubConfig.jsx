@@ -1,6 +1,9 @@
 import React, { Component } from 'react';
 import { branch } from 'baobab-react/higher-order';
-import { Edit, Check, Close } from '@material-ui/icons';
+
+import Edit from '@material-ui/icons/Edit';
+import Check from '@material-ui/icons/Check';
+import Close from '@material-ui/icons/Close';
 
 import actionsWrapper from '../../utils/mixin.actions.branch';
 

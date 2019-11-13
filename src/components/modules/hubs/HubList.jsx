@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import { branch } from 'baobab-react/higher-order';
 import { values } from 'lodash';
 import classnames from 'classnames';
-import { AddCircle } from '@material-ui/icons';
+import AddCircle from '@material-ui/icons/AddCircle';
 
 import actionsWrapper from '../../../utils/mixin.actions.branch';
 

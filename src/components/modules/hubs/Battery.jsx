@@ -1,5 +1,5 @@
 import React from 'react';
-import { BatteryStd } from '@material-ui/icons';
+import BatteryStd from '@material-ui/icons/BatteryStd';
 
 export default props => {
   const { level = 0 } = props;

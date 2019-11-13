@@ -1,11 +1,9 @@
 import React, { Component } from 'react';
 import { values } from 'lodash';
 
-import {
-  Build,
-  LinkOff,
-  PowerSettingsNew,
-} from '@material-ui/icons';
+import Build from '@material-ui/icons/Build';
+import LinkOff from '@material-ui/icons/LinkOff';
+import PowerSettingsNew from '@material-ui/icons/PowerSettingsNew';
 
 import actionsWrapper from '../../../utils/mixin.actions.branch';
 
