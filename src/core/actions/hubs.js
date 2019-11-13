@@ -157,4 +157,13 @@ export default {
     state.set(['hubs', uuid], undefined);
     clients.lego.action(uuid, 'shutdown', undefined, callback);
   },
+
+  /**
+   * Rename hub
+   * @param {String} uuid
+   * @param {String} name
+   */
+  rename({ clients, callback }, { uuid, name }) {
+    clients.lego.action(uuid, 'setName', [name], callback);
+  },
 };

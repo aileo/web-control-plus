@@ -17,6 +17,7 @@ class Hub extends Component {
     super();
     this.disconnect = this.disconnect.bind(this);
     this.shutdown = this.shutdown.bind(this);
+    this.config = this.config.bind(this);
   }
 
   disconnect() {
@@ -29,14 +30,22 @@ class Hub extends Component {
     actions.hubs.shutdown({ uuid });
   }
 
+  config() {
+    const { uuid, actions } = this.props;
+    actions.navigation.openModal({
+      name: 'hubConfig',
+      context: { uuid },
+    });
+  }
+
   render() {
-    const { color, type, system, ports } = this.props;
+    const { name, color, type, system, ports } = this.props;
     return (
       <div className="list-group-item hub">
         <button className="primary" type="button">
           <div className="info">
             <div className="header" />
-            <div className="body">{ type.compact }</div>
+            <div className="body" title={ name }>{ type.compact }</div>
             <div className="footer">
               <Battery level={ system.batteryLevel } />
             </div>
@@ -48,6 +57,15 @@ class Hub extends Component {
             values(ports).map(port => (
               <Port key={ port.name } { ...port } />
             )).concat([
+              <button
+                key="config"
+                type="button"
+                className="button config"
+                onClick={ this.config }
+                title="Configure hub"
+              >
+                <Build />
+              </button>,
               <button
                 key="disconnect"
                 type="button"

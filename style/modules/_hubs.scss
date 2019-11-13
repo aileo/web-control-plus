@@ -166,11 +166,27 @@
           }
         }
 
-        &:hover div.secondary,
-        button.primary:focus + div.secondary {
-          display: flex;
+        &:hover,
+        &:focus-within  {
+          button.primary {
+            color: $light;
+            background-color: $dark;
+          }
+          div.secondary {
+            display: flex;
+          }
         }
       }
+    }
+  }
+}
+
+.modal-content {
+  &.hub {
+    min-width: 30rem;
+
+    .modal-footer {
+      justify-content: center;
     }
   }
 }
