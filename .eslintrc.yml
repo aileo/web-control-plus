@@ -42,3 +42,10 @@ rules:
     - error
     - when: always
   react/forbid-prop-types: off
+  max-len:
+    - error
+    - code: 80
+      tabWidth: 2
+  jsx-a11y/label-has-associated-control:
+    - error
+    - assert: either

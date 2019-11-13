@@ -8,7 +8,7 @@
     "lint:js": "eslint --ext .jsx,.js src/** --fix",
     "lint:scss": "stylelint style/**",
     "lint": "npm run lint:scss && npm run lint:js",
-    "build": "parcel build --public-url . ./index.html --out-dir dist --out-file app.html"
+    "build": "parcel build --public-url . ./index.html --out-dir dist --out-file app.html --experimental-scope-hoisting"
   },
   "author": "aileo",
   "license": "MIT",
