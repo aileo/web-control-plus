@@ -48,7 +48,7 @@ export default {
    */
   update({ state, callback }, { hubId, portName, event, data }) {
     // update device with event data
-    state.select('devices', hubId, portName, 'eventData', event).set(data);
+    state.select('devices', hubId, portName, event).set(data);
     state.once('update', () => callback());
   },
 

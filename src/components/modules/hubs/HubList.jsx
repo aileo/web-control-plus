@@ -4,7 +4,7 @@ import { values } from 'lodash';
 import classnames from 'classnames';
 import AddCircle from '@material-ui/icons/AddCircle';
 
-import actionsWrapper from '../../../utils/mixin.actions.branch';
+import { branch as actionsWrapper } from '../../high-order/actions';
 
 import Hub from './Hub';
 

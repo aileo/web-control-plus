@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import { root as baobabRoot } from 'baobab-react/higher-order';
 
-import actionRoot from './utils/mixin.actions.root';
+import { root as actionRoot } from './components/high-order/actions';
 import state from './core/state';
 import clients from './core/clients';
 import actions from './core/actions';

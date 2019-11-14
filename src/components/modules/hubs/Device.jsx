@@ -3,7 +3,7 @@ import LinkOff from '@material-ui/icons/LinkOff';
 
 import icons from '../../../utils/devicesIcons';
 
-import actionsWrapper from '../../../utils/mixin.actions.branch';
+import { branch as actionsWrapper } from '../../high-order/actions';
 
 class Device extends Component {
   constructor() {

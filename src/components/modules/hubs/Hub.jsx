@@ -6,7 +6,7 @@ import Build from '@material-ui/icons/Build';
 import LinkOff from '@material-ui/icons/LinkOff';
 import PowerSettingsNew from '@material-ui/icons/PowerSettingsNew';
 
-import actionsWrapper from '../../../utils/mixin.actions.branch';
+import { branch as actionsWrapper } from '../../high-order/actions';
 
 import Battery from './Battery';
 import Device from './Device';

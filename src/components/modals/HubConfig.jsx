@@ -5,7 +5,7 @@ import Edit from '@material-ui/icons/Edit';
 import Check from '@material-ui/icons/Check';
 import Close from '@material-ui/icons/Close';
 
-import actionsWrapper from '../../utils/mixin.actions.branch';
+import { branch as actionsWrapper } from '../high-order/actions';
 
 class HubConfig extends Component {
   constructor() {
