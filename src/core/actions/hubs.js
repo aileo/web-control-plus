@@ -115,7 +115,7 @@ export default {
         (hub, cb) => {
           const { rgb } = lego.colorFromText(hub.uuid);
           lego.action(
-            hub.id,
+            id,
             'setLEDRGB',
             // HACK : green and blue leds are brighter than red ones
             // Lower G & B values then to match the screen display

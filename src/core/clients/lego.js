@@ -47,11 +47,7 @@ export default {
   get(mac, callback) {
     const hub = client.getConnectedHubByPrimaryMACAddress(mac);
 
-    if (hub) {
-      callback(null, hub);
-    } else {
-      callback(40400);
-    }
+    callback(!hub ? 40400 : null, hub);
   },
 
   /**
