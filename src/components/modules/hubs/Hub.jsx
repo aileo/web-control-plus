@@ -20,26 +20,26 @@ class Hub extends Component {
   }
 
   disconnect() {
-    const { uuid, actions } = this.props;
-    actions.hubs.disconnect({ uuid });
+    const { id, actions } = this.props;
+    actions.hubs.disconnect({ id });
   }
 
   shutdown() {
-    const { uuid, actions } = this.props;
-    actions.hubs.shutdown({ uuid });
+    const { id, actions } = this.props;
+    actions.hubs.shutdown({ id });
   }
 
   config() {
-    const { uuid, actions } = this.props;
+    const { id, actions } = this.props;
     actions.navigation.openModal({
       name: 'hubConfig',
-      context: { uuid },
+      context: { id },
     });
   }
 
   render() {
-    const { uuid, name, color, type, system, ports } = this.props;
-    const devices = ports[uuid];
+    const { id, name, color, type, system, ports } = this.props;
+    const devices = ports[id];
 
     return (
       <div className="list-group-item hub">
@@ -56,7 +56,9 @@ class Hub extends Component {
         <div className="secondary">
           {
             values(devices).map(device => (
-              <Device key={ device.port } { ...device } />
+              device.port
+                ? <Device key={ device.port } { ...device } hubId={ id } />
+                : undefined
             )).concat([
               <button
                 key="config"

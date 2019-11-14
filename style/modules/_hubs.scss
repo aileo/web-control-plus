@@ -112,15 +112,18 @@
             width: 5rem;
             border: 0;
             border-left: 1px solid $dark;
+            padding: 0;
+            display: flex;
+            flex-flow: column nowrap;
+            align-items: stretch;
+            color: $dark;
+            background-color: transparent;
 
             &:nth-child(1) {
               border-left: 0;
             }
 
-            &.port {
-              display: flex;
-              flex-flow: column nowrap;
-              align-items: stretch;
+            &.device {
 
               .name {
                 text-align: center;
@@ -141,13 +144,9 @@
             }
 
             &.button {
-              display: flex;
-              flex-flow: column nowrap;
               justify-content: center;
               align-items: center;
               font-size: 2em;
-              color: $dark;
-              background-color: transparent;
 
               &.config:hover, &.config:focus {
                 background-color: $primary;

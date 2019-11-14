@@ -13,15 +13,15 @@ function getDeviceInfo(device) {
 export default {
   /**
    * Register new device (even if no device...)
-   * @param {String} hubUuid
+   * @param {String} hubId
    * @param {String} portName
    */
-  register({ clients, state, callback }, { hubUuid, portName }) {
+  register({ clients, state, callback }, { hubId, portName }) {
     const { lego } = clients;
     waterfall(
       [
         // get hub from client
-        cb => lego.get(hubUuid, cb),
+        cb => lego.get(hubId, cb),
         // get specific port
         (hub, cb) => cb(null, hub._ports[portName]),
         // set state
@@ -31,7 +31,7 @@ export default {
           deviceInfo.type = lego.constToObject('DeviceType', deviceInfo.type);
           // erase eventData has it now refer to a new data
           deviceInfo.eventData = {};
-          state.select('devices', hubUuid).set(portName, deviceInfo);
+          state.select('devices', hubId).set(portName, deviceInfo);
           state.once('update', () => cb());
         },
       ],
@@ -41,14 +41,23 @@ export default {
 
   /**
    * Store event data in state
-   * @param {String} hubUuid
+   * @param {String} hubId
    * @param {String} portName
    * @param {String} event
    * @param {Any} data
    */
-  update({ state, callback }, { hubUuid, portName, event, data }) {
+  update({ state, callback }, { hubId, portName, event, data }) {
     // update device with event data
-    state.select('devices', hubUuid, portName, 'eventData', event).set(data);
+    state.select('devices', hubId, portName, 'eventData', event).set(data);
     state.once('update', () => callback());
+  },
+
+  action({ clients, callback }, { hubId, portName, action, params }) {
+    clients.lego.action(
+      hubId,
+      action,
+      [portName].concat(params),
+      err => callback(err)
+    );
   },
 };
