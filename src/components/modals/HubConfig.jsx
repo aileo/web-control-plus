@@ -37,7 +37,7 @@ class HubConfig extends Component {
   }
 
   cancel() {
-    const { uuid, hubs } = this.props;
+    const { uuid, actions } = this.props;
     const { name } = actions.hubs.selectByUuid({ uuid }).get();
     this.input.value = name;
     this.setState({ editMode: false });
