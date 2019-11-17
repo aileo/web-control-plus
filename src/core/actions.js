@@ -56,9 +56,14 @@ export default transform(
           logger.debug(`ACTION[${scope}.${name}]`, { params });
 
           // real method call
-          action(
+          return action(
             {
-              callback,
+              callback: (error, ...results) => {
+                if (error) {
+                  logger.error(`ACTION[${scope}.${name}]`, error, ...results);
+                }
+                callback(error, ...results);
+              },
               clients,
               state,
               actions,

@@ -31,7 +31,7 @@ export default {
    * Associate new hub to the application
    * @param {Function} callback
    */
-  add(callback = (() => {})) {
+  add(callback = () => {}) {
     client.once('discover', async hub => {
       await hub.connect();
       callback(null, { hub });
@@ -68,7 +68,7 @@ export default {
       return callback(40401);
     }
 
-    return (hub[action])(...params).then(
+    return hub[action](...params).then(
       results => callback(null, results),
       err => callback(err)
     );
@@ -97,7 +97,7 @@ export default {
    */
   colorFromText(txt) {
     const h = txt.split('').reduce((sum, char) => sum + char.charCodeAt(), 0);
-    const color = tinycolor({ h: (h % 180) * 2, s: 1, l: 0.5 });
+    const color = tinycolor({ h: h % 180 * 2, s: 1, l: 0.5 });
     return {
       hex: color.toHexString(),
       rgb: color.toRgb(),

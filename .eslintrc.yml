@@ -49,3 +49,9 @@ rules:
   jsx-a11y/label-has-associated-control:
     - error
     - assert: either
+  no-mixed-operators: off
+  no-extra-parens:
+    - error
+    - all
+    - ignoreJSX: multi-line
+      enforceForArrowConditionals: false
