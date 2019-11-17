@@ -1,4 +1,3 @@
-import { waterfall } from 'async';
 import { pick } from 'lodash';
 
 function getDeviceInfo(device) {

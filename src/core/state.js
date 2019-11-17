@@ -11,6 +11,7 @@ const state = new Baobab(
     },
     hubs: [],
     devices: [],
+    controls: [],
   },
   {
     cursorSingletons: false,

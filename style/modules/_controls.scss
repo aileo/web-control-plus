@@ -1,0 +1,33 @@
+.control {
+  position: absolute;
+
+  > .tile {
+    display: flex;
+    flex-flow: row nowrap;
+    justify-content: center;
+    align-items: center;
+    background-color: $light;
+
+    margin: .02rem;
+    width: calc(100% - .05rem);
+    height: calc(100% - .05rem);
+
+    border: 1px solid rgba($dark, .4);
+    box-shadow:
+      inset -.1rem -.1rem .1rem rgba($dark, .3),
+      .2rem .2rem .6rem rgba($dark, .5);
+
+    > .control-display {
+      height: calc(1ex - 2rem);
+      width: calc(1ex - 2rem);
+      position: relative;
+      overflow: hidden;
+    }
+  }
+
+  &.has-error {
+    > .tile {
+      background-color: $red;
+    }
+  }
+}

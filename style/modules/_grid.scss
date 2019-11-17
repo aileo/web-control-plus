@@ -1,0 +1,47 @@
+.grid {
+  position: relative;
+  overflow-y: hidden;
+  overflow-x: auto;
+  flex-grow: 1;
+  flex-shrink: 1;
+  max-width: calc(100vw - 5rem);
+
+  >.grid-layout {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-flow: column nowrap;
+    align-items: stretch;
+    >.grid-row {
+      flex-grow: 1;
+      display: flex;
+      flex-flow: row nowrap;
+      align-items: stretch;
+
+      >.grid-cell {
+        flex-grow: 1;
+        position: relative;
+
+        &:before {
+          position: absolute;
+          display: block;
+          height: 60%;
+          width: 60%;
+          margin: 20%;
+          border-radius: 50%;
+          border: 1px solid rgba($dark, .5);
+          content: " ";
+          box-shadow:
+            inset -.1rem -.1rem .1rem rgba($dark, .5),
+            .1rem .1rem .6rem rgba($dark, .5);
+        }
+      }
+    }
+  }
+
+  >.grid-controls {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+}
