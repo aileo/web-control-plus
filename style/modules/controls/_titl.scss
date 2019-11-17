@@ -1,0 +1,59 @@
+.tilt {
+  >.dial {
+    height: 100%;
+    width: 100%;
+    border-radius: 50%;
+
+    border: .04ex solid $dark;
+    background-color: $blue;
+    position: relative;
+    overflow: hidden;
+
+    * {
+      transition: 0.1s;
+    }
+
+    >.rolling {
+      position: relative;
+      height: 100%;
+      width: 100%;
+
+      >.pitching {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        border-top: .02ex solid $dark;
+        background-color: $yellow;
+      }
+    }
+
+    >.pointer {
+      position: absolute;
+      border-radius: .04ex;
+      top: calc(50% - .03ex);
+      left: calc(50% - .03ex);
+      height: .06ex;
+      width: .06ex;
+      background-color: $red;
+      border: .01ex solid $light;
+
+      &:before, &:after {
+        display: block;
+        position: absolute;
+        top: -.01ex;
+        height: .06ex;
+        width: 1ex;
+        background-color: $red;
+        border: .01ex solid $light;
+        border-radius: .04ex;
+        content: " ";
+      }
+      &:before {
+        right: .2ex;
+      }
+      &:after {
+        left: .2ex;
+      }
+    }
+  }
+}

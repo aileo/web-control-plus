@@ -1,0 +1,41 @@
+$distance_line_size: 0.06ex;
+
+.distance {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: center;
+
+  >.arc {
+    position: absolute;
+    margin-top: calc(50% - #{$distance_line_size} * 5)
+  }
+
+  .arc {
+    border-width: $distance_line_size;
+    border-style: solid;
+    border-color: transparent transparent transparent transparent;
+    border-radius: 50%;
+    padding: $distance_line_size;
+    width: auto;
+
+    &.inactive {
+      border-top-color: rgba($dark, .2);
+    }
+    &.safe {
+      border-top-color: $blue;
+    }
+    &.warning {
+      border-top-color: $yellow;
+    }
+    &.danger {
+      border-top-color: $red;
+    }
+  }
+
+  .dot {
+    border-radius: 50%;
+    background-color: $dark;
+    width: $distance_line_size * 2;
+    height: $distance_line_size * 2;
+  }
+}

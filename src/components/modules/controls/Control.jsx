@@ -7,7 +7,13 @@ import pureRender from '../../high-order/pure-render';
 
 import Error from './Error';
 
-export const components = {};
+import Tilt from './Tilt';
+import Distance from './Distance';
+
+export const components = {
+  tilt: Tilt,
+  distance: Distance,
+};
 
 class Control extends Component {
   getDevice(index, definition) {

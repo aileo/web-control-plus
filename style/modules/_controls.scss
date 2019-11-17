@@ -30,4 +30,7 @@
       background-color: $red;
     }
   }
+
+  @import './controls/titl';
+  @import './controls/distance';
 }
