@@ -40,14 +40,19 @@ export default {
   },
 
   /**
-   * Get hub object from its mac
-   * @param {String} mac
-   * @param {Function} callback
+   * Get hub object from its mac or uuid
+   * @param {Object} selectors
    */
-  get(mac, callback) {
-    const hub = client.getConnectedHubByPrimaryMACAddress(mac);
+  get({ mac, uuid }) {
+    if (mac) {
+      return client.getConnectedHubByPrimaryMACAddress(mac);
+    }
 
-    callback(!hub ? 40400 : null, hub);
+    if (uuid) {
+      return client.getConnectedHubByUUID(uuid);
+    }
+
+    return null;
   },
 
   /**
@@ -57,8 +62,8 @@ export default {
    * @param {Array} params
    * @param {Function} callback
    */
-  action(mac, action, params = [], callback = () => {}) {
-    const hub = client.getConnectedHubByPrimaryMACAddress(mac);
+  action(selector, action, params = [], callback = () => {}) {
+    const hub = this.get(selector);
 
     if (!hub) {
       return callback(40400);

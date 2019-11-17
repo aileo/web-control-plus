@@ -42,7 +42,9 @@ export default {
       [
         // Get hub from client scan
         cb => clients.lego.add(cb),
-        ({ hub }, cb) => {
+        // register new hub in state
+        ({ hub }, cb) => actions.hubs.register({ hub }, err => cb(err, hub)),
+        (hub, cb) => {
           // wait for the MAC address to be synchronized
           whilst(
             testCb => testCb(
@@ -53,15 +55,11 @@ export default {
             () => cb(null, hub)
           );
         },
-        // register new hub in state
-        (hub, cb) => actions.hubs.register({
-          id: hub.primaryMACAddress,
-        }, cb),
         // Bootstrap hub (led color, event listeners)
-        (hub, cb) => actions.hubs.bootsrap({ id: hub.primaryMACAddress }, cb),
+        (hub, cb) => actions.hubs.bootsrap({ hub }, err => cb(err, hub)),
         // Init hub refresh timeout
         (hub, cb) => {
-          actions.hubs.resetTimeout({ id: hub.primaryMACAddress });
+          actions.hubs.resetTimeout(hub);
           cb(null, hub);
         },
       ],
@@ -69,62 +67,54 @@ export default {
     );
   },
 
+  selectByUuid({ state }, { uuid }) {
+    return state.select('hubs', { uuid });
+  },
+
+  selectByMac({ state }, { mac }) {
+    return state.select('hubs', { mac });
+  },
+
   /**
    * Add hub information to state
-   * @param {String} id
+   * @param {LPF2Hub} hub
    */
-  register({ callback, clients, state, actions }, { id }) {
+  register({ clients, state, actions, callback }, { hub }) {
     const { lego } = clients;
-    waterfall(
-      [
-        // get hub from client
-        cb => lego.get(id, cb),
-        (hub, cb) => {
-          // Add generic hub information to state
-          state.select('hubs').set(id, {
-            id,
-            uuid: hub.uuid,
-            name: hub.name,
-            type: lego.constToObject('HubType', hub.getHubType()),
-            color: lego.colorFromText(hub.uuid).hex,
-            system: getSystemInfo(hub),
-          });
+    // Add generic hub information to state
+    const hubInfo = {
+      uuid: hub.uuid,
+      name: hub.name,
+      mac: hub.primaryMACAddress,
+      online: true,
+      type: lego.constToObject('HubType', hub.getHubType()),
+      color: lego.colorFromText(hub.uuid).hex,
+      system: getSystemInfo(hub),
+    };
+    const cursor = actions.hubs.selectByUuid({ uuid: hub.uuid });
+    if (cursor.exists()) {
+      cursor.set(hubInfo);
+    } else {
+      state.select('hubs').push(hubInfo);
+    }
 
-          // register devices
-          Object.keys(hub._ports).forEach(portName => {
-            actions.devices.register({ hubId: id, portName });
-          });
-
-          state.once('update', () => cb(null, hub));
-        },
-      ],
-      callback
-    );
+    state.once('update', () => callback());
   },
 
   /**
    * Set builtin LED to color determined from uuid
    * @param {String} id
    */
-  setLED({ clients, callback }, { id }) {
+  setLED({ clients, callback }, { hub }) {
     const { lego } = clients;
-    waterfall(
-      [
-        // get hub from client
-        cb => lego.get(id, cb),
-        (hub, cb) => {
-          const { rgb } = lego.colorFromText(hub.uuid);
-          lego.action(
-            id,
-            'setLEDRGB',
-            // HACK : green and blue leds are brighter than red ones
-            // Lower G & B values then to match the screen display
-            [rgb.r, rgb.g * 0.5, rgb.b * 0.5],
-            err => cb(err, hub)
-          );
-        },
-      ],
-      callback
+    const { rgb } = lego.colorFromText(hub.uuid);
+    lego.action(
+      { uuid: hub.uuid },
+      'setLEDRGB',
+      // HACK : green and blue leds are brighter than red ones
+      // Lower G & B values then to match the screen display
+      [rgb.r, rgb.g * 0.5, rgb.b * 0.5],
+      err => callback(err)
     );
   },
 
@@ -132,23 +122,22 @@ export default {
    * Apply some initial action to newly associated hub
    * @param {String} id
    */
-  bootsrap({ actions, callback }, { id }) {
+  bootsrap({ actions, callback }, { hub }) {
     waterfall(
       [
         // Set hub LED
-        cb => actions.hubs.setLED({ id }, cb),
-        // Unsuscribe to TILT event (as they spam, at least on BOOST MOVE HUB)
-        (hub, cb) => hub.unsubscribe('TILT').then(
-          () => cb(null, hub),
-          // ignore error on this one
-          () => cb(null, hub)
-        ),
-        (hub, cb) => {
+        cb => actions.hubs.setLED({ hub }, cb),
+        cb => {
+          // register devices
+          Object.keys(hub._ports).forEach(portName => {
+            actions.devices.register({ hub, portName });
+          });
+
           // Attach to some event (registerEvents)
           // to refresh hub's devices local state
           registerEvents.forEach(event => {
             hub.on(event, portName => actions.devices.register({
-              hubId: id,
+              hub,
               portName,
             }));
           });
@@ -157,14 +146,14 @@ export default {
           // to refresh hub's devices measurements state
           deviceEvents.forEach(event => {
             hub.on(event, (portName, ...data) => actions.devices.update({
-              hubId: id,
+              hub,
               portName,
               event,
               data,
             }));
           });
 
-          cb(null, hub);
+          cb();
         },
       ],
       callback
@@ -175,75 +164,92 @@ export default {
    * Clear hub refresh timeout by uuid
    * @param {String} uuid
    */
-  clearTimeout(ctx, { id }) {
-    if (hubTimeout[id]) {
-      clearTimeout(hubTimeout[id]);
+  clearTimeout(ctx, { uuid }) {
+    if (hubTimeout[uuid]) {
+      clearTimeout(hubTimeout[uuid]);
     }
   },
 
   /**
-   * Reset hub refresh timeout by id
-   * @param {String} id
+   * Reset hub refresh timeout by uuid
+   * @param {String} uuid
    */
-  resetTimeout({ actions }, { id }) {
-    actions.hubs.clearTimeout({ id });
-    hubTimeout[id] = setTimeout(() => actions.hubs.update({ id }), 1000);
+  resetTimeout({ actions }, { uuid }) {
+    actions.hubs.clearTimeout({ uuid });
+    hubTimeout[uuid] = setTimeout(() => actions.hubs.update({ uuid }), 1000);
   },
 
   /**
-   * Update hub local state by id
-   * @param {String} id
+   * Update hub local state by uuid
+   * @param {String} uuid
    */
-  update({ clients, state, actions, callback }, { id }) {
+  update({ clients, state, actions, callback }, { uuid }) {
     const { lego } = clients;
     /**
      * reset hub refresh timeout
      * prevent this method from being call too often when already call from
      * an event (updateEvents).
      */
-    actions.hubs.resetTimeout({ id });
+    actions.hubs.resetTimeout({ uuid });
 
     // get hub from client
-    lego.get(id, (err, hub) => {
-      if (err) {
-        return callback(err);
-      }
+    const hub = lego.get({ uuid });
+    if (!hub) {
+      actions.hubs.clearTimeout({ uuid });
+      return callback(40400);
+    }
 
-      // update state with collected data
-      const hubData = state.select(['hubs', id]);
-      hubData.set('name', hub.name);
-      hubData.set('system', getSystemInfo(hub));
+    // update state with collected data
+    const hubData = actions.hubs.selectByUuid({ uuid });
 
-      return callback(null, hub);
-    });
+    hubData.set('name', hub.name);
+    hubData.set('mac', hub.primaryMACAddress);
+    hubData.set('online', true);
+    hubData.set('system', getSystemInfo(hub));
+
+    state.once('update', () => callback());
+    return null;
   },
 
   /**
-   * Disconnect from hub by id
-   * @param {String} id
+   * Disconnect from hub by uuid
+   * @param {String} uuid
    */
-  disconnect({ clients, state, actions, callback }, { id }) {
-    actions.hubs.clearTimeout({ id });
-    state.set(['hubs', id], undefined);
-    clients.lego.action(id, 'disconnect', undefined, callback);
+  disconnect({ clients, actions, callback }, { uuid }) {
+    actions.hubs.clearTimeout({ uuid });
+    actions.hubs.selectByUuid({ uuid }).set('online', false);
+    clients.lego.action({ uuid }, 'disconnect', undefined, callback);
   },
 
   /**
-   * Shutdown hub by id
-   * @param {String} id
+   * Shutdown hub by uuid
+   * @param {String} uuid
    */
-  shutdown({ clients, state, actions, callback }, { id }) {
-    actions.hubs.clearTimeout({ id });
-    state.set(['hubs', id], undefined);
-    clients.lego.action(id, 'shutdown', undefined, callback);
+  shutdown({ clients, actions, callback }, { uuid }) {
+    actions.hubs.clearTimeout({ uuid });
+    actions.hubs.selectByUuid({ uuid }).set('online', false);
+    clients.lego.action({ uuid }, 'shutdown', undefined, callback);
+  },
+
+  /**
+   * Remove hub by uuid
+   * @param {String} uuid
+   */
+  remove({ state, actions }, { uuid }) {
+    const data = actions.hubs.selectByUuid({ uuid });
+    state
+      .get('devices')
+      .filter(d => d.mac === data.get('mac'))
+      .forEach(({ mac, port }) => actions.devices.remove({ mac, port }));
+    data.unset();
   },
 
   /**
    * Rename hub
-   * @param {String} id
+   * @param {String} uuid
    * @param {String} name
    */
-  rename({ clients, callback }, { id, name }) {
-    clients.lego.action(id, 'setName', [name], callback);
+  rename({ clients, callback }, { uuid, name }) {
+    clients.lego.action({ uuid }, 'setName', [name], callback);
   },
 };

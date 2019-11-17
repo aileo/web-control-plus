@@ -12,7 +12,7 @@ class Device extends Component {
   }
 
   addControl() {
-    const { port, connected, hubId, actions } = this.props;
+    const { port, connected, mac, actions } = this.props;
 
     if (!connected) {
       return undefined;
@@ -22,7 +22,7 @@ class Device extends Component {
       name: 'createControl',
       context: {
         portName: port,
-        hubId,
+        mac,
       },
     });
   }

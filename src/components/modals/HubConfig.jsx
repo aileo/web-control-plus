@@ -38,7 +38,7 @@ class HubConfig extends Component {
 
   cancel() {
     const { uuid, hubs } = this.props;
-    const { name } = hubs[uuid];
+    const { name } = actions.hubs.selectByUuid({ uuid }).get();
     this.input.value = name;
     this.setState({ editMode: false });
   }
@@ -50,13 +50,13 @@ class HubConfig extends Component {
 
   render() {
     const { editMode } = this.state;
-    const { uuid, hubs } = this.props;
-    const { name, system } = hubs[uuid];
+    const { uuid, actions } = this.props;
+    const { mac, name, system } = actions.hubs.selectByUuid({ uuid }).get();
 
     return (
       <div className="modal-content hub">
         <div className="modal-header">
-          <h4>{ uuid }</h4>
+          <h4>{ mac }</h4>
         </div>
         <form className="modal-body">
           <div className="form-group row">
@@ -80,30 +80,31 @@ class HubConfig extends Component {
                 {
                   editMode
                     ? [
-                      <button
-                        key="cancel"
-                        className="btn
-                      btn-outline-danger"
-                        type="button"
-                        onClick={ this.cancel }
-                      >
-                        <Close />
-                      </button>,
-                      <button
-                        key="confirm"
-                        className="btn
-                      btn-outline-success"
-                        type="button"
-                        onClick={ this.rename }
-                      >
-                        <Check />
-                      </button>,
+                      (
+                        <button
+                          key="cancel"
+                          className="btn btn-outline-danger"
+                          type="button"
+                          onClick={ this.cancel }
+                        >
+                          <Close />
+                        </button>
+                      ),
+                      (
+                        <button
+                          key="confirm"
+                          className="btn btn-outline-success"
+                          type="button"
+                          onClick={ this.rename }
+                        >
+                          <Check />
+                        </button>
+                      ),
                     ]
                     : (
                       <button
                         key="edit"
-                        className="btn
-                    btn-outline-primary"
+                        className="btn btn-outline-primary"
                         type="button"
                         onClick={ this.edit }
                       >

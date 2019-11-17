@@ -11,32 +11,33 @@ function getDeviceInfo(device) {
 }
 
 export default {
+  select({ state }, { mac, port }) {
+    return state.select('devices', { mac, port });
+  },
+
   /**
    * Register new device (even if no device...)
    * @param {String} hubId
    * @param {String} portName
    */
-  register({ clients, state, callback }, { hubId, portName }) {
+  register({ clients, state, actions, callback }, { hub, portName }) {
     const { lego } = clients;
-    waterfall(
-      [
-        // get hub from client
-        cb => lego.get(hubId, cb),
-        // get specific port
-        (hub, cb) => cb(null, hub._ports[portName]),
-        // set state
-        (device, cb) => {
-          const deviceInfo = getDeviceInfo(device);
-          deviceInfo.port = portName;
-          deviceInfo.type = lego.constToObject('DeviceType', deviceInfo.type);
-          // erase eventData has it now refer to a new data
-          deviceInfo.eventData = {};
-          state.select('devices', hubId).set(portName, deviceInfo);
-          state.once('update', () => cb());
-        },
-      ],
-      callback
+    const device = hub._ports[portName];
+    const deviceInfo = getDeviceInfo(device);
+    deviceInfo.mac = hub.primaryMACAddress;
+    deviceInfo.port = portName;
+    deviceInfo.type = lego.constToObject('DeviceType', deviceInfo.type);
+    // erase eventData has it now refer to a new data
+    deviceInfo.eventData = {};
+    const cursor = actions.devices.select(
+      { mac: deviceInfo.mac, port: deviceInfo.port }
     );
+    if (cursor.exists()) {
+      cursor.set(deviceInfo);
+    } else {
+      state.select('devices').push(deviceInfo);
+    }
+    state.once('update', () => callback());
   },
 
   /**
@@ -46,18 +47,24 @@ export default {
    * @param {String} event
    * @param {Any} data
    */
-  update({ state, callback }, { hubId, portName, event, data }) {
+  update({ state, actions, callback }, { hub, portName, event, data }) {
     // update device with event data
-    state.select('devices', hubId, portName, event).set(data);
+    actions.devices
+      .select({ mac: hub.primaryMACAddress, port: portName })
+      .set(event, data);
     state.once('update', () => callback());
   },
 
-  action({ clients, callback }, { hubId, portName, action, params }) {
+  action({ clients, callback }, { mac, portName, action, params }) {
     clients.lego.action(
-      hubId,
+      { mac },
       action,
       [portName].concat(params),
       err => callback(err)
     );
+  },
+
+  remove({ actions }, { mac, port }) {
+    actions.devices.select({ mac, port }).unset();
   },
 };

@@ -1,7 +1,5 @@
 import React, { Component } from 'react';
 import { branch } from 'baobab-react/higher-order';
-import { values } from 'lodash';
-import classnames from 'classnames';
 import AddCircle from '@material-ui/icons/AddCircle';
 
 import { branch as actionsWrapper } from '../../high-order/actions';
@@ -20,25 +18,22 @@ class HubList extends Component {
   }
 
   render() {
-    const { hubs, classNames } = this.props;
+    const { hubs } = this.props;
     return (
-      <div className={ classnames('hubs', 'list-group', classNames) }>
+      <div className="hubs list-group">
         {
           [
-            (
-              <button
-                key="add"
-                type="button"
-                className="list-group-item add"
-                onClick={ this.add }
-              >
-                <AddCircle />
-              </button>
-            ),
+
+            <button
+              key="add"
+              type="button"
+              className="list-group-item add"
+              onClick={ this.add }
+            >
+              <AddCircle />
+            </button>,
           ].concat(
-            values(hubs)
-              .filter(h => h)
-              .map(hub => (<Hub key={ hub.uuid } { ...hub } />))
+            hubs.map(hub => <Hub key={ hub.uuid } { ...hub } />)
           )
         }
       </div>
