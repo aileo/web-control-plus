@@ -8,6 +8,7 @@ import logger from '../utils/logger';
 import navigation from './actions/navigation';
 import hubs from './actions/hubs';
 import devices from './actions/devices';
+import grid from './actions/grid';
 
 const helpers = {
   /**
@@ -36,6 +37,7 @@ export default transform(
     navigation,
     hubs,
     devices,
+    grid,
   },
   (actions, collection, scope) => {
     actions[scope] = actions[scope] || {};

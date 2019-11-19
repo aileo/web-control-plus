@@ -1,6 +1,7 @@
 @import './bootstrap-override';
 @import '../node_modules/bootstrap-scss/bootstrap.scss';
 
+@import './mixins';
 @import './layout';
 @import './modules';
 @import './overrides';

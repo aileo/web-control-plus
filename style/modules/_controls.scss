@@ -34,3 +34,46 @@
   @import './controls/titl';
   @import './controls/distance';
 }
+
+.modal-content {
+  min-width: 30vw;
+  max-height: 70vw;
+  overflow-y: auto;
+
+  &.control-add {
+    max-width: 70vw;
+
+    .modal-body {
+      display: flex;
+      flex-flow: row wrap;
+      justify-content: space-between;
+
+      button {
+        padding: 0;
+        border: 0;
+        background: none;
+
+        .control {
+          margin: .5rem;
+
+          .tile {
+            .pin {
+              position: absolute;
+              @include pin;
+
+              &:before {
+                box-shadow:
+                  inset -.02em -.02em .02em rgba($dark, .5),
+                  .02em .02em .1em rgba($dark, .5);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    .control {
+      position: relative;
+    }
+  }
+}

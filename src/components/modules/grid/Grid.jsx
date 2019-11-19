@@ -1,13 +1,11 @@
 import React, { Component } from 'react';
+import { branch } from 'baobab-react/higher-order';
 
 import { branch as actionsWrapper } from '../../high-order/actions';
 import resize from '../../high-order/resize';
 
 import GridLayout from './GridLayout';
 import GridControls from './GridControls';
-
-export const ROWS = 6;
-export const COLS = 10;
 
 class Grid extends Component {
   constructor() {
@@ -21,15 +19,18 @@ class Grid extends Component {
   }
 
   render() {
-    const { height } = this.props;
-    const unit = height / ROWS;
+    const { height, rows, cols } = this.props;
+    const unit = height / rows;
     return (
       <div className="grid">
-        <GridLayout rows={ ROWS } cols={ COLS } height={ height } />
+        <GridLayout rows={ rows } cols={ cols } height={ height } />
         <GridControls unit={ unit } />
       </div>
     );
   }
 }
 
-export default actionsWrapper(['hubs'], resize(Grid));
+export default branch({
+  rows: ['grid', 'rows'],
+  cols: ['grid', 'cols'],
+}, actionsWrapper(['hubs'], resize(Grid)));

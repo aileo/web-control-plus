@@ -1,0 +1,32 @@
+@mixin pin {
+  &:before {
+    position: absolute;
+    display: block;
+    height: 60%;
+    width: 60%;
+    margin: 20%;
+    border-radius: 50%;
+    border: 1px solid rgba($dark, .5);
+    content: " ";
+    box-shadow:
+      inset -.1rem -.1rem .1rem rgba($dark, .5),
+      .1rem .1rem .6rem rgba($dark, .5);
+  }
+}
+
+@mixin pin-label {
+  &:after {
+    position: absolute;
+    display: block;
+    height: 1rem;
+    width: 100%;
+    margin: calc(50% - .5rem) 0;
+    line-height: .8rem;
+    color: rgba($light, .5);
+    font-style: italic;
+    text-align: center;
+
+    content: "WCP";
+    text-shadow: .05rem .05rem .1rem rgba($dark, .5);
+  }
+}

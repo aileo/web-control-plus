@@ -26,8 +26,6 @@ export default {
     deviceInfo.mac = hub.primaryMACAddress;
     deviceInfo.port = portName;
     deviceInfo.type = lego.constToObject('DeviceType', deviceInfo.type);
-    // erase eventData has it now refer to a new data
-    deviceInfo.eventData = {};
     const cursor = actions.devices.select(
       { mac: deviceInfo.mac, port: deviceInfo.port }
     );

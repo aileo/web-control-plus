@@ -902,10 +902,10 @@ $btn-padding-x-sm:            .25rem;
 // $modal-header-padding-x:            1rem !default;
 // $modal-header-padding:              $modal-header-padding-y $modal-header-padding-x !default; // Keep this for backwards compatibility
 
-// $modal-xl:                          1140px !default;
-// $modal-lg:                          800px !default;
-// $modal-md:                          500px !default;
-// $modal-sm:                          300px !default;
+$modal-xl:                          auto;
+$modal-lg:                          auto;
+$modal-md:                          auto;
+$modal-sm:                          auto;
 
 // $modal-fade-transform:              translate(0, -50px) !default;
 // $modal-show-transform:              none !default;
