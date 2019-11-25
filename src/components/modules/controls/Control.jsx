@@ -1,9 +1,12 @@
-import React, { Component } from 'react';
+import React from 'react';
 import { branch } from 'baobab-react/higher-order';
 import classnames from 'classnames';
+import { pick } from 'lodash';
 
+import Lauch from '@material-ui/icons/Launch';
+
+import PureRenderComponent from '../../utils/PureRender';
 import { branch as actionsWrapper } from '../../high-order/actions';
-import pureRender from '../../high-order/pure-render';
 
 import Error from './Error';
 
@@ -15,33 +18,54 @@ export const components = {
   distance: Distance,
 };
 
-class Control extends Component {
+class Control extends PureRenderComponent {
+  constructor() {
+    super();
+    this.openConfig = this.openConfig.bind(this);
+  }
+
+  openConfig() {
+    const { x, y, actions } = this.props;
+
+    return actions.navigation.openModal({
+      name: 'controlConfig',
+      context: { x, y },
+    });
+  }
+
   getDevice(index, definition) {
-    const { devices, actions } = this.props;
+    const { devices, ports } = this.props;
     const { mac, port } = devices[index];
-    const device = actions.devices.select({ mac, port }).get();
+    const device = ports.reduce((d, p) => {
+      if (p.mac === mac && p.port === port) {
+        return p;
+      }
+      return d;
+    }, null);
 
     if (!device) {
-      return { error: 40402, device: {} };
+      return { error: 40402, device: {}, events: [] };
     }
 
     if (!definition.type.includes(device.type.num)) {
-      return { error: 40000, device: {} };
+      return { error: 40000, device: {}, events: [] };
     }
 
-    return { device };
+    return {
+      device,
+      events: definition.events,
+    };
   }
 
   render() {
-    const { type, x, y, w, h, unit } = this.props;
+    const { data, type, x, y, w, h, unit, actions } = this.props;
     const sizeUnit = 2 * unit * Math.min(w, h);
     const ControlComponent = components[type];
-    const Renderer = pureRender(ControlComponent);
     const errors = [];
 
     const devices = ControlComponent.devices.reduce(
       (collection, definition, index) => {
-        const { error, device } = this.getDevice(index, definition);
+        const { error, device, events } = this.getDevice(index, definition);
         if (error) {
           errors.push({
             id: definition.id,
@@ -49,7 +73,10 @@ class Control extends Component {
             code: error,
           });
         }
-        collection[definition.id] = device;
+        collection[definition.id] = {
+          ...device,
+          ...pick((data[device.mac] || {})[device.port] || {}, events),
+        };
         return collection;
       },
       {}
@@ -67,10 +94,24 @@ class Control extends Component {
         } }
       >
         <div className="tile" data-unit={ sizeUnit }>
+          <button
+            type="button"
+            className="control-parameters"
+            onClick={ this.openConfig }
+          >
+            <Lauch />
+          </button>
           {
             errors.length
               ? <Error errors={ errors } />
-              : <Renderer devices={ devices } />
+              : (
+                <ControlComponent
+                  actions={ actions }
+                  devices={ devices }
+                  unit={ unit }
+                  isVertical={ w <= h }
+                />
+              )
           }
         </div>
       </div>
@@ -79,5 +120,6 @@ class Control extends Component {
 }
 
 export default branch({
+  data: ['events'],
   ports: ['devices'],
-}, actionsWrapper(['devices'], Control));
+}, actionsWrapper(['navigation', 'devices'], Control));

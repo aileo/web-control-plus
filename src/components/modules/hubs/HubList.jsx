@@ -1,12 +1,13 @@
-import React, { Component } from 'react';
+import React from 'react';
 import { branch } from 'baobab-react/higher-order';
 import AddCircle from '@material-ui/icons/AddCircle';
 
+import PureRenderComponent from '../../utils/PureRender';
 import { branch as actionsWrapper } from '../../high-order/actions';
 
 import Hub from './Hub';
 
-class HubList extends Component {
+class HubList extends PureRenderComponent {
   constructor() {
     super();
     this.add = this.add.bind(this);

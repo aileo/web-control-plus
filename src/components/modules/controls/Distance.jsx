@@ -42,6 +42,8 @@ Distance.devices = [
       CONSTS.DeviceType.BOOST_DISTANCE,
       CONSTS.DeviceType.WEDO2_DISTANCE,
     ],
+    mode: 0x01,
+    events: ['distance'],
   },
 ];
 

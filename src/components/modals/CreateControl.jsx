@@ -25,8 +25,14 @@ class CreateControl extends Component {
   }
 
   getDevice() {
-    const { mac, portName: port, actions } = this.props;
-    return actions.devices.select({ mac, port }).get() || {};
+    const { devices, mac, portName: port } = this.props;
+    return devices.reduce((device, p) => {
+      if (p.mac === mac && p.port === port) {
+        return p;
+      }
+
+      return device;
+    }, null) || {};
   }
 
   getCompatibleControls() {
@@ -35,7 +41,7 @@ class CreateControl extends Component {
     // get compatible controls with selected device (by type)
     const controls = transform(
       components,
-      (proposals, { devices }, controlType) => {
+      (proposals, { devices = [] }, controlType) => {
         devices.forEach((input, index) => {
           if (includes(input.type, device.type.num)) {
             const proposalDevices = [];

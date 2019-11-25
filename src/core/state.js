@@ -12,25 +12,12 @@ const state = new Baobab(
     },
     hubs: [],
     devices: [],
+    events: {},
     controls: [],
+    commands: {},
     grid: {
       rows: 6,
       cols: 10,
-      size: [
-        [1, 1],
-        [2, 1],
-        [4, 1],
-        [6, 1],
-        [8, 1],
-        [2, 2],
-        [4, 2],
-      ].reduce((collection, [w, h]) => {
-        collection.push({ w, h });
-        if (w !== h) {
-          collection.push({ w: h, h: w });
-        }
-        return collection;
-      }, []),
       matrix: monkey({
         cursors: {
           rows: ['grid', 'rows'],

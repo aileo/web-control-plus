@@ -35,6 +35,8 @@ Tilt.devices = [
       CONSTS.DeviceType.BOOST_TILT,
       CONSTS.DeviceType.CONTROL_PLUS_TILT,
     ],
+    mode: 0, // ANGLE
+    events: ['tilt'],
   },
 ];
 

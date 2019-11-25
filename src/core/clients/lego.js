@@ -5,6 +5,7 @@ import * as CONSTS from 'node-poweredup/src/consts';
 import tinycolor from 'tinycolor2';
 
 const client = new PoweredUP();
+client.autoSubscribe = false;
 
 /**
  * Translate from consts

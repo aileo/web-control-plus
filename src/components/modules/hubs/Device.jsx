@@ -1,11 +1,12 @@
-import React, { Component } from 'react';
+import React from 'react';
 import LinkOff from '@material-ui/icons/LinkOff';
 
 import icons from '../../../utils/devicesIcons';
 
+import PureRenderComponent from '../../utils/PureRender';
 import { branch as actionsWrapper } from '../../high-order/actions';
 
-class Device extends Component {
+class Device extends PureRenderComponent {
   constructor() {
     super();
     this.addControl = this.addControl.bind(this);

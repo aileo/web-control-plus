@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React from 'react';
 import { branch } from 'baobab-react/higher-order';
 import classnames from 'classnames';
 
@@ -7,12 +7,13 @@ import LinkOff from '@material-ui/icons/LinkOff';
 import PowerSettingsNew from '@material-ui/icons/PowerSettingsNew';
 import DeleteForever from '@material-ui/icons/DeleteForever';
 
+import PureRenderComponent from '../../utils/PureRender';
 import { branch as actionsWrapper } from '../../high-order/actions';
 
 import Battery from './Battery';
 import Device from './Device';
 
-class Hub extends Component {
+class Hub extends PureRenderComponent {
   constructor() {
     super();
     this.disconnect = this.disconnect.bind(this);
