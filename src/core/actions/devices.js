@@ -7,7 +7,6 @@ function getDeviceInfo(device) {
     'connected',
     'busy',
     'type',
-    'value',
   ]);
 }
 

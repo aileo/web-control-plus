@@ -169,8 +169,7 @@ class HubConfig extends Component {
         </form>
         <div className="modal-footer">
           <button
-            className="btn
-            btn-primary"
+            className="btn btn-primary"
             type="button"
             onClick={ this.close }
           >
