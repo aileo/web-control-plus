@@ -12,10 +12,14 @@ import Error from './Error';
 
 import Tilt from './Tilt';
 import Distance from './Distance';
+import Slider from './Slider';
+import Arrows from './Arrows';
 
 export const components = {
   tilt: Tilt,
   distance: Distance,
+  slider: Slider,
+  arrows: Arrows,
 };
 
 class Control extends PureRenderComponent {

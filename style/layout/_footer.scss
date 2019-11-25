@@ -7,4 +7,29 @@
   flex-grow: 0;
   box-shadow: 0 0 .2rem $dark;
   z-index: 20;
+  font-size: .8rem;
+  justify-content: center;
+  align-items: center;
+  color: $light;
+
+  > div {
+    @extend .nav-item;
+
+    > a {
+      @extend .nav-link;
+      padding: 0 1rem;
+      color: $light;
+
+      &:hover{
+        color: $primary;
+      }
+
+    }
+  }
+
+  img {
+    max-height: 1rem;
+    vertical-align: middle;
+    margin: 0 .5rem;
+  }
 }

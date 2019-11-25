@@ -1,0 +1,61 @@
+div.slider {
+  &.control-display{
+    height: calc(100% - 2rem);
+    width: calc(100% - 2rem);
+  }
+
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+
+  &.horizontal {
+    flex-direction: column;
+    justify-content: center;
+
+    .slide {
+      height: .1ex;
+      width: calc(100% - .4ex);
+
+      button.handle {
+        height: .5ex;
+        width: .3ex;
+        border-width: .2ex .1ex;
+        margin: -.22ex -.1ex;
+        border-color: $red transparent;
+      }
+    }
+  }
+  &.vertical {
+    flex-direction: row;
+
+    .slide {
+      width: .1ex;
+      height: calc(100% - .4ex);
+
+      button.handle {
+        width: .5ex;
+        height: .3ex;
+        border-width: .1ex .2ex;
+        margin: -.1ex -.22ex;
+        border-color: transparent $red;
+      }
+    }
+  }
+
+  .slide {
+    border: .02ex solid $dark;
+    background-color: $blue;
+    border-radius: 0.1ex;
+    position: relative;
+    margin: .2ex;
+
+    button.handle {
+      display: block;
+      position: absolute;
+      border-radius: 25%;
+      border-style: solid;
+      background: none;
+      outline: none;
+    }
+  }
+}

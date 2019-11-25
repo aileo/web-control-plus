@@ -1,0 +1,63 @@
+div.arrows {
+  &.control-display{
+    height: calc(100% - 2rem);
+    width: calc(100% - 2rem);
+  }
+
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-around;
+  align-items: center;
+
+  button {
+    display: block;
+    border: .02ex solid $dark;
+    outline: none;
+    background-color: $blue;
+    height: .5ex;
+    width: .5ex;
+    border-radius: .1ex;
+    color: $light;
+    position: relative;
+
+    &:hover{
+      background-color: $yellow;
+      color: $dark;
+    }
+    &:active{
+      background-color: $red;
+      color: $light;
+    }
+
+    &:after {
+      font-size: .3ex;
+      width: 100%;
+      height: 100%;
+      text-align: center;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+  }
+
+  &.horizontal {
+    flex-direction: row;
+
+    .min:after {
+      content: '\25C4';
+    }
+    .max:after {
+      content: '\25BA';
+    }
+  }
+  &.vertical {
+    flex-direction: column;
+
+    .min:after {
+      content: '\25B2';
+    }
+    .max:after {
+      content: '\25BC';
+    }
+  }
+}
