@@ -29,5 +29,6 @@ export default {
   CONTROL_PLUS_XLARGE_MOTOR: Autorenew,
   POWERED_UP_REMOTE_BUTTON: TouchApp,
   CONTROL_PLUS_ACCELEROMETER: ScreenRotation,
+  CONTROL_PLUS_GYRO: ScreenRotation,
   CONTROL_PLUS_TILT: ScreenRotation,
 };

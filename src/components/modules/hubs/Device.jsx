@@ -31,7 +31,7 @@ class Device extends PureRenderComponent {
   render() {
     const { port, connected, type } = this.props;
 
-    const Icon = connected ? icons[type.text] : LinkOff;
+    const Icon = connected && icons[type.text] ? icons[type.text] : LinkOff;
     const text = connected ? type.text : 'Disconnected';
     return (
       <button className="device" type="button" onClick={ this.addControl }>
