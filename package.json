@@ -18,7 +18,7 @@
   "dependencies": {
     "@material-ui/core": "^4.6.1",
     "@material-ui/icons": "^4.5.1",
-    "async": "^3.1.0",
+    "async": "^3.2.2",
     "baobab": "^2.5.2",
     "baobab-react": "^4.0.0",
     "bootstrap-scss": "^4.3.1",
