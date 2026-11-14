@@ -1,21 +1,4 @@
-import { waterfall, whilst } from 'async';
-import { pick } from 'lodash';
-
-const registerEvents = [
-  'attach',
-  'detach',
-];
-const deviceEvents = [
-  'accel',
-  'button',
-  'color',
-  'colorAndDistance',
-  'distance',
-  'rotate',
-  'speed',
-  'temp',
-  'tilt',
-];
+import { waterfall } from 'async';
 
 const hubTimeout = {};
 
@@ -24,13 +7,17 @@ const hubTimeout = {};
  * @param {Object} hub
  */
 function getSystemInfo(hub) {
-  return pick(hub, [
-    'firmware',
-    'batteryLevel',
-    'current',
-    'voltage',
-    'rssi',
-  ]);
+  const voltage = hub.getDeviceAtPort('VOLTAGE_SENSOR');
+  const current = hub.getDeviceAtPort('CURRENT_SENSOR');
+  return {
+    firmware: hub.firmwareVersion,
+    batteryLevel: hub.batteryLevel,
+    current: current && current.values.current
+      && current.values.current.current,
+    voltage: voltage && voltage.values.voltage
+      && voltage.values.voltage.voltage,
+    rssi: hub.rssi,
+  };
 }
 
 export default {
@@ -44,17 +31,6 @@ export default {
         cb => clients.lego.add(cb),
         // register new hub in state
         ({ hub }, cb) => actions.hubs.register({ hub }, err => cb(err, hub)),
-        (hub, cb) => {
-          // wait for the MAC address to be synchronized
-          whilst(
-            testCb => testCb(
-              null,
-              hub.primaryMACAddress === '00:00:00:00:00:00'
-            ),
-            iterateeCb => setTimeout(() => iterateeCb(), 100),
-            () => cb(null, hub)
-          );
-        },
         // Bootstrap hub (led color, event listeners)
         (hub, cb) => actions.hubs.bootsrap({ hub }, err => cb(err, hub)),
         // Init hub refresh timeout
@@ -85,9 +61,9 @@ export default {
     const hubInfo = {
       uuid: hub.uuid,
       name: hub.name,
-      mac: hub.primaryMACAddress,
+      mac: lego.identity(hub),
       online: true,
-      type: lego.constToObject('HubType', hub.getHubType()),
+      type: lego.constToObject('HubType', hub.type),
       color: lego.colorFromText(hub.uuid).hex,
       system: getSystemInfo(hub),
     };
@@ -108,56 +84,35 @@ export default {
   setLED({ clients, callback }, { hub }) {
     const { lego } = clients;
     const { rgb } = lego.colorFromText(hub.uuid);
-    lego.action(
-      { uuid: hub.uuid },
-      'setLEDRGB',
-      // HACK : green and blue leds are brighter than red ones
-      // Lower G & B values then to match the screen display
-      [rgb.r, rgb.g * 0.5, rgb.b * 0.5],
-      err => callback(err)
-    );
+    const led = hub.getDevicesByType(lego.CONSTS.DeviceType.HUB_LED)[0];
+    if (!led) return callback(new Error('Hub LED not found'));
+    return Promise.resolve(led.setRGB(rgb.r, rgb.g * 0.5, rgb.b * 0.5))
+      .then(() => callback(), callback);
   },
 
   /**
    * Apply some initial action to newly associated hub
    * @param {String} id
    */
-  bootsrap({ actions, callback }, { hub }) {
-    waterfall(
-      [
-        // Set hub LED
-        cb => actions.hubs.setLED({ hub }, cb),
-        cb => {
-          // register devices
-          Object.keys(hub._ports).forEach(portName => {
-            actions.devices.register({ hub, portName });
-          });
-
-          // Attach to some event (registerEvents)
-          // to refresh hub's devices local state
-          registerEvents.forEach(event => {
-            hub.on(event, portName => actions.devices.register({
-              hub,
-              portName,
-            }));
-          });
-
-          // Attach to some event (registerEvents)
-          // to refresh hub's devices measurements state
-          deviceEvents.forEach(event => {
-            hub.on(event, (portName, ...data) => actions.devices.update({
-              hub,
-              portName,
-              event,
-              data,
-            }));
-          });
-
-          cb();
-        },
-      ],
-      callback
-    );
+  bootsrap({ actions, clients, callback }, { hub }) {
+    hub.on('attach', device => {
+      actions.devices.register({ hub, device });
+      if (device.type === clients.lego.CONSTS.DeviceType.HUB_LED) {
+        actions.hubs.setLED({ hub });
+      }
+    });
+    hub.on('detach', device => {
+      actions.devices.register({ hub, device, detached: true });
+    });
+    hub.ports.forEach(portName => {
+      actions.devices.register({ hub, portName });
+    });
+    hub.on('disconnect', () => {
+      actions.hubs.clearTimeout({ uuid: hub.uuid });
+      actions.hubs.selectByUuid({ uuid: hub.uuid }).set('online', false);
+    });
+    actions.hubs.setLED({ hub });
+    callback();
   },
 
   /**
@@ -203,7 +158,7 @@ export default {
     const hubData = actions.hubs.selectByUuid({ uuid });
 
     hubData.set('name', hub.name);
-    hubData.set('mac', hub.primaryMACAddress);
+    hubData.set('mac', lego.identity(hub));
     hubData.set('online', true);
     hubData.set('system', getSystemInfo(hub));
 

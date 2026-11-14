@@ -21,6 +21,15 @@ Click on the "plus" button on the left bar to scan for hub and associate one.
 The hub should appear in a list on the left bar and its built-in LED should take
 the UI associated color.
 
+Choose the hub in the browser's Bluetooth dialog after clicking the plus button;
+pairing it in the operating system alone does not add it to the app. Connection
+failures and timeouts are reported in the browser. The precise hub and its
+firmware may affect compatibility.
+
+The Technic Move Hub 88019 requires encrypted Bluetooth pairing and is not
+currently supported by `node-poweredup` 10.1.0; pairing alone will not make it
+work with this app.
+
 It should detect available features from built-in and connected devices
 
 Click on any feature/device to create a new control by selecting type and size, it will be added to the main board.
@@ -55,6 +64,11 @@ Bluetooth bindings pulled in by `node-poweredup`. Bluetooth runs in the browser,
 not inside Docker. Use a Web Bluetooth-compatible browser and a secure context:
 localhost works over HTTP, but access from another machine requires HTTPS.
 Configure optional development proxies in `dev/proxies.json`.
+
+The development, build, and test commands apply a version-specific patch to
+`node-poweredup` for browser compatibility and discovery timing. Review or
+remove that patch when upgrading the dependency. Run `npm test` for the
+simulated Bluetooth regression tests.
 
 ### Build
 

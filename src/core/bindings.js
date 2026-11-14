@@ -15,7 +15,7 @@ const bindings = [
         devices,
         previousControls: target.path[0] === 'controls'
           ? data.previousData
-          : controls,
+          : [],
         currentControls: controls,
       }, callback);
     },

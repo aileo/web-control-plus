@@ -15,7 +15,11 @@ class HubList extends PureRenderComponent {
 
   add() {
     const { actions } = this.props;
-    actions.hubs.add();
+    actions.hubs.add(error => {
+      if (error) {
+        window.alert(`Unable to connect hub: ${error.message || error}`);
+      }
+    });
   }
 
   render() {

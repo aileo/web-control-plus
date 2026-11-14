@@ -1,14 +1,7 @@
-import { pick, includes, each } from 'lodash';
+import { includes, each } from 'lodash';
 
+import { CONSTS } from '../clients/lego';
 import { components } from '../../components/modules/controls/Control';
-
-function getDeviceInfo(device) {
-  return pick(device, [
-    'connected',
-    'busy',
-    'type',
-  ]);
-}
 
 function getDeviceModes(devicesIndex, controls, key, modes = {}) {
   controls.forEach(control => {
@@ -16,11 +9,15 @@ function getDeviceModes(devicesIndex, controls, key, modes = {}) {
       modes[mac] = modes[mac] || {};
       modes[mac][port] = modes[mac][port] || {};
 
-      const { type } = devicesIndex[mac][port];
+      const device = devicesIndex[mac] && devicesIndex[mac][port];
+      if (!device || !device.connected) return;
+      const { type } = device;
       const component = components[control.type];
 
-      if (includes(component.devices[index].type, type.num)) {
-        modes[mac][port][key] = component.devices[index].mode;
+      if (includes(component.devices[index].type, type.num)
+        && component.devices[index].mode !== null) {
+        modes[mac][port][key] = type.num === CONSTS.DeviceType.MOTION_SENSOR
+          ? 0 : component.devices[index].mode;
       }
     });
   });
@@ -37,13 +34,22 @@ export default {
    * @param {String} hubId
    * @param {String} portName
    */
-  register({ clients, state, actions, callback }, { hub, portName }) {
+  register({ clients, state, actions, callback, logger }, params) {
     const { lego } = clients;
-    const device = hub._ports[portName];
-    const deviceInfo = getDeviceInfo(device);
-    deviceInfo.mac = hub.primaryMACAddress;
-    deviceInfo.port = portName;
-    deviceInfo.type = lego.constToObject('DeviceType', deviceInfo.type);
+    const { hub, detached = false } = params;
+    const portName = params.portName || params.device && params.device.portName;
+    if (!portName) {
+      return callback(new Error('Attached device has no port name'));
+    }
+    const device = detached ? null : params.device
+      || hub.getDeviceAtPort(portName);
+    const deviceInfo = {
+      mac: lego.identity(hub),
+      port: portName,
+      connected: Boolean(device),
+      busy: false,
+      type: lego.constToObject('DeviceType', device ? device.type : 0),
+    };
     const cursor = actions.devices.select(deviceInfo);
     if (cursor.exists()) {
       cursor.set(deviceInfo);
@@ -52,7 +58,25 @@ export default {
     }
     state.select('events').set([deviceInfo.mac, deviceInfo.port], {});
     state.select('commands').set([deviceInfo.mac, deviceInfo.port], {});
+    if (device) {
+      device.autoSubscribe = false;
+      ['distance', 'tilt'].forEach(event => {
+        device.on(event, values => {
+          const data = event === 'tilt'
+            ? [values.x, values.y, values.z] : [values.distance];
+          actions.devices.update({ hub, portName, event, data });
+        });
+      });
+      if (device.type === lego.CONSTS.DeviceType.VOLTAGE_SENSOR
+        || device.type === lego.CONSTS.DeviceType.CURRENT_SENSOR) {
+        Promise.resolve(hub.subscribe(device.portId, device.type, 0))
+          .catch(error => {
+            logger.error('Failed to subscribe to hub sensor', error);
+          });
+      }
+    }
     state.once('update', () => callback());
+    return null;
   },
 
   /**
@@ -62,8 +86,8 @@ export default {
    * @param {String} event
    * @param {Any} data
    */
-  update({ state, callback }, { hub, portName, event, data }) {
-    state.set(['events', hub.primaryMACAddress, portName, event], data);
+  update({ clients, state, callback }, { hub, portName, event, data }) {
+    state.set(['events', clients.lego.identity(hub), portName, event], data);
     return state.once('update', () => callback());
   },
 
@@ -80,32 +104,43 @@ export default {
     actions.devices.select({ mac, port }).unset();
   },
 
-  setSpeed({ clients, state }, { mac, port, speed }) {
-    clients.lego.action(
-      { mac },
-      'setMotorSpeed',
-      [port].concat(speed)
-    );
-
-    state.select('commands', mac, port).set('speed', speed);
+  setSpeed({ clients, state, callback }, { mac, port, speed }) {
+    const hub = clients.lego.get({ mac });
+    const device = hub && hub.getDeviceAtPort(port);
+    if (!device) return callback(40402);
+    const value = Number(speed);
+    if (!Number.isFinite(value) || value < -100 || value > 100) {
+      return callback(new Error('Invalid motor speed'));
+    }
+    let result;
+    if (typeof device.setSpeed === 'function'
+      && hub.type !== clients.lego.CONSTS.HubType.WEDO2_SMART_HUB) {
+      result = device.setSpeed(value, undefined, true);
+    } else if (typeof device.setPower === 'function') {
+      result = device.setPower(value, true);
+    } else {
+      return callback(40000);
+    }
+    state.select('commands', mac, port).set('speed', value);
+    return Promise.resolve(result).then(() => callback(), callback);
   },
 
   subscribe({ clients, callback }, { mac, port, mode }) {
-    clients.lego.action(
-      { mac },
-      'subscribe',
-      [port, mode],
-      err => callback(err)
-    );
+    const hub = clients.lego.get({ mac });
+    const device = hub && hub.getDeviceAtPort(port);
+    if (!device) return callback(40402);
+    return Promise.resolve(hub.subscribe(device.portId, device.type, mode))
+      .then(() => callback(), callback);
   },
 
-  unsubscribe({ clients, callback }, { mac, port }) {
-    clients.lego.action(
-      { mac },
-      'unsubscribe',
-      [port],
-      err => callback(err)
-    );
+  unsubscribe({ clients, callback }, { mac, port, mode }) {
+    const hub = clients.lego.get({ mac });
+    const device = hub && hub.getDeviceAtPort(port);
+    if (!device) return callback(40402);
+    const params = hub.type === clients.lego.CONSTS.HubType.WEDO2_SMART_HUB
+      ? [device.portId, device.type, mode] : [device.portId, mode];
+    return Promise.resolve(hub.unsubscribe(...params))
+      .then(() => callback(), callback);
   },
 
   updateSubscription(
@@ -131,7 +166,7 @@ export default {
 
         if (previous !== current) {
           if (current === undefined) {
-            actions.devices.unsubscribe({ mac, port });
+            actions.devices.unsubscribe({ mac, port, mode: previous });
           } else {
             actions.devices.subscribe({ mac, port, mode: current });
           }

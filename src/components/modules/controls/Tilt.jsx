@@ -31,9 +31,9 @@ Tilt.devices = [
     id: 'sensor',
     label: 'Sensor',
     type: [
-      CONSTS.DeviceType.WEDO2_TILT,
-      CONSTS.DeviceType.BOOST_TILT,
-      CONSTS.DeviceType.CONTROL_PLUS_TILT,
+      CONSTS.DeviceType.TILT_SENSOR,
+      CONSTS.DeviceType.MOVE_HUB_TILT_SENSOR,
+      CONSTS.DeviceType.TECHNIC_MEDIUM_HUB_TILT_SENSOR,
     ],
     mode: 0, // ANGLE
     events: ['tilt'],

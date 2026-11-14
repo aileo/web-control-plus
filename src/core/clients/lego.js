@@ -1,11 +1,13 @@
-// eslint-disable-next-line import/no-unresolved
-import { PoweredUP } from 'node-poweredup/src/poweredup-browser';
-// eslint-disable-next-line import/no-unresolved
-import * as CONSTS from 'node-poweredup/src/consts';
+// eslint-disable-next-line import/no-unresolved, import/extensions
+import { PoweredUP } from 'node-poweredup/dist/poweredup-browser.js';
+// eslint-disable-next-line import/no-unresolved, import/extensions
+import * as CONSTS from 'node-poweredup/dist/consts.js';
 import tinycolor from 'tinycolor2';
+// eslint-disable-next-line import/extensions
+import logger from '../../utils/logger.js';
 
-const client = new PoweredUP();
-client.autoSubscribe = false;
+const hubs = new Map();
+let scanning = false;
 
 /**
  * Translate from consts
@@ -28,16 +30,69 @@ function compact(id) {
 }
 
 export default {
+  CONSTS,
   /**
    * Associate new hub to the application
    * @param {Function} callback
    */
   add(callback = () => {}) {
-    client.once('discover', async hub => {
-      await hub.connect();
-      callback(null, { hub });
-    });
-    client.scan();
+    if (scanning) {
+      callback(new Error('A hub scan is already in progress'));
+      return;
+    }
+    scanning = true;
+    const client = new PoweredUP();
+    let finished = false;
+    let hub;
+    let timer;
+    let discovered;
+    const finish = (error, result) => {
+      if (finished) return;
+      finished = true;
+      scanning = false;
+      clearTimeout(timer);
+      client.removeListener('discover', discovered);
+      callback(error, result);
+    };
+    discovered = async discoveredHub => {
+      hub = discoveredHub;
+      try {
+        await hub.connect();
+        if (finished) {
+          await hub.disconnect();
+          return;
+        }
+        hubs.set(hub.uuid, hub);
+        hub.once('disconnect', () => {
+          if (hubs.get(hub.uuid) === hub) hubs.delete(hub.uuid);
+        });
+        finish(null, { hub });
+      } catch (error) {
+        Promise.resolve().then(() => hub.disconnect())
+          .catch(disconnectError => {
+            logger.error('Failed to disconnect hub', disconnectError);
+          });
+        finish(error);
+      }
+    };
+    timer = setTimeout(() => {
+      if (hub) {
+        Promise.resolve().then(() => hub.disconnect()).catch(error => {
+          logger.error('Failed to disconnect timed-out hub', error);
+        });
+      } else {
+        client.once('discover', lateHub => {
+          Promise.resolve().then(() => lateHub.disconnect()).catch(error => {
+            logger.error('Failed to disconnect timed-out hub', error);
+          });
+        });
+      }
+      finish(new Error('Hub discovery or connection timed out'));
+    }, 30000);
+    client.once('discover', discovered);
+    client.scan().then(success => {
+      if (!success) finish(new Error('Bluetooth scan or connection failed'));
+    }, finish);
   },
 
   /**
@@ -46,14 +101,22 @@ export default {
    */
   get({ mac, uuid }) {
     if (mac) {
-      return client.getConnectedHubByPrimaryMACAddress(mac);
+      return Array.from(hubs.values()).find(
+        hub => hub.uuid === mac || hub.primaryMACAddress === mac
+      );
     }
 
     if (uuid) {
-      return client.getConnectedHubByUUID(uuid);
+      return hubs.get(uuid);
     }
 
     return null;
+  },
+
+  identity(hub) {
+    return hub.primaryMACAddress
+      && hub.primaryMACAddress !== '00:00:00:00:00:00'
+      ? hub.primaryMACAddress : hub.uuid;
   },
 
   /**
@@ -87,7 +150,7 @@ export default {
    * @return {Object}
    */
   constToObject(type, value) {
-    const text = translate(type, value);
+    const text = translate(type, value) || 'UNKNOWN';
     return {
       num: value,
       text,
