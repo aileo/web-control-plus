@@ -56,7 +56,7 @@ class Arrows extends PureRenderComponent {
           onMouseDown={ this.hold }
           onTouchStart={ this.hold }
         >
-min
+          min
         </button>
         <button
           type="button"
@@ -65,7 +65,7 @@ min
           onMouseDown={ this.hold }
           onTouchStart={ this.hold }
         >
-max
+          max
         </button>
       </div>
     );

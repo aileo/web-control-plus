@@ -116,7 +116,6 @@ class CreateControl extends Component {
     const { actions } = this.props;
     const maxSizes = actions.grid.getMaxSizes();
 
-
     return components[control.type].sizes
       .filter(size => maxSizes[size.h] >= size.w)
       .map(size => (

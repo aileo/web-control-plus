@@ -1,7 +1,6 @@
 import React from 'react';
 import { times } from 'lodash';
 
-
 const Pin = props => {
   const { x, y, unit } = props;
 
