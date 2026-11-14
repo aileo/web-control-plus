@@ -27,3 +27,5 @@ services:
           path: ./package.json
         - action: rebuild
           path: ./package-lock.json
+        - action: rebuild
+          path: ./patches

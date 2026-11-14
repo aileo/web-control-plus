@@ -1,0 +1,183 @@
+diff --git a/node_modules/node-poweredup/dist/devices/device.js b/node_modules/node-poweredup/dist/devices/device.js
+index 2f90dda..e989ea3 100644
+--- a/node_modules/node-poweredup/dist/devices/device.js
++++ b/node_modules/node-poweredup/dist/devices/device.js
+@@ -1,10 +1,8 @@
+-import { createRequire as _createRequire } from "module";
+-const __require = _createRequire(import.meta.url);
++import Debug from "debug";
+ import { EventEmitter } from "events";
+ import { PortOutputCommand } from "../portoutputcommand.js";
+ import { PortOutputSleep } from "../portoutputsleep.js";
+ import * as Consts from "../consts.js";
+-const Debug = __require("debug");
+ const debug = Debug("device");
+ /**
+  * @class Device
+diff --git a/node_modules/node-poweredup/dist/portoutputcommand.js b/node_modules/node-poweredup/dist/portoutputcommand.js
+index 68634f2..8d24040 100644
+--- a/node_modules/node-poweredup/dist/portoutputcommand.js
++++ b/node_modules/node-poweredup/dist/portoutputcommand.js
+@@ -1,7 +1,5 @@
+-import { createRequire as _createRequire } from "module";
+-const __require = _createRequire(import.meta.url);
++import Debug from "debug";
+ import { CommandFeedback } from "./consts.js";
+-const Debug = __require("debug");
+ const debug = Debug("device");
+ export class PortOutputCommand {
+     constructor(data, interrupt) {
+diff --git a/node_modules/node-poweredup/dist/poweredup-browser.js b/node_modules/node-poweredup/dist/poweredup-browser.js
+index d354419..51ac70b 100644
+--- a/node_modules/node-poweredup/dist/poweredup-browser.js
++++ b/node_modules/node-poweredup/dist/poweredup-browser.js
+@@ -26,6 +26,9 @@ export class PoweredUP extends EventEmitter {
+      * Begin scanning for Powered UP Hub devices.
+      */
+     async scan() {
++        let server;
++        let timeout;
++        let stage = "Bluetooth device selection";
+         try {
+             const device = await navigator.bluetooth.requestDevice({
+                 filters: [
+@@ -47,12 +50,25 @@ export class PoweredUP extends EventEmitter {
+                 ]
+             });
+             // @ts-ignore
+-            const server = await device.gatt.connect();
+-            this._discoveryEventHandler.call(this, server);
++            stage = "Bluetooth connection";
++            server = await device.gatt.connect();
++            stage = "Hub discovery";
++            await Promise.race([
++                this._discoveryEventHandler.call(this, server),
++                new Promise((resolve, reject) => {
++                    timeout = setTimeout(() => reject(new Error("Hub discovery timed out")), 20000);
++                })
++            ]);
+             return true;
+         }
+         catch (err) {
+-            return false;
++            if (server) {
++                server.device.gatt.disconnect();
++            }
++            throw new Error(`${stage} failed: ${err.message || err}`);
++        }
++        finally {
++            clearTimeout(timeout);
+         }
+     }
+     /**
+@@ -94,10 +110,13 @@ export class PoweredUP extends EventEmitter {
+     getHubsByType(hubType) {
+         return Object.values(this._connectedHubs).filter((hub) => hub.type === hubType);
+     }
+-    _determineLPF2HubType(device) {
+-        return new Promise(async (resolve) => {
+-            let buf = Buffer.alloc(0);
+-            await device.subscribeToCharacteristic(Consts.BLECharacteristic.LPF2_ALL, (data) => {
++    async _determineLPF2HubType(device) {
++        let buf = Buffer.alloc(0);
++        let resolveType;
++        const hubType = new Promise((resolve) => {
++            resolveType = resolve;
++        });
++        await device.subscribeToCharacteristic(Consts.BLECharacteristic.LPF2_ALL, (data) => {
+                 buf = Buffer.concat([buf, data]);
+                 while (buf[0] <= buf.length) {
+                     const len = buf[0];
+@@ -106,25 +125,28 @@ export class PoweredUP extends EventEmitter {
+                     if (message[2] === 0x01 && message[3] === 0x0b) {
+                         switch (message[5]) {
+                             case Consts.BLEManufacturerData.REMOTE_CONTROL_ID:
+-                                resolve(Consts.HubType.REMOTE_CONTROL);
++                                resolveType(Consts.HubType.REMOTE_CONTROL);
+                                 break;
+                             case Consts.BLEManufacturerData.MOVE_HUB_ID:
+-                                resolve(Consts.HubType.MOVE_HUB);
++                                resolveType(Consts.HubType.MOVE_HUB);
+                                 break;
+                             case Consts.BLEManufacturerData.HUB_ID:
+-                                resolve(Consts.HubType.HUB);
++                                resolveType(Consts.HubType.HUB);
+                                 break;
+                             case Consts.BLEManufacturerData.DUPLO_TRAIN_BASE_ID:
+-                                resolve(Consts.HubType.DUPLO_TRAIN_BASE);
++                                resolveType(Consts.HubType.DUPLO_TRAIN_BASE);
+                                 break;
+                             case Consts.BLEManufacturerData.TECHNIC_SMALL_HUB_ID:
+-                                resolve(Consts.HubType.TECHNIC_SMALL_HUB);
++                                resolveType(Consts.HubType.TECHNIC_SMALL_HUB);
+                                 break;
+                             case Consts.BLEManufacturerData.TECHNIC_MEDIUM_HUB_ID:
+-                                resolve(Consts.HubType.TECHNIC_MEDIUM_HUB);
++                                resolveType(Consts.HubType.TECHNIC_MEDIUM_HUB);
+                                 break;
+                             case Consts.BLEManufacturerData.MARIO_ID:
+-                                resolve(Consts.HubType.MARIO);
++                                resolveType(Consts.HubType.MARIO);
++                                break;
++                            default:
++                                resolveType(Consts.HubType.UNKNOWN);
+                                 break;
+                         }
+                         debug("Hub type determined");
+@@ -134,12 +156,13 @@ export class PoweredUP extends EventEmitter {
+                         device.addToCharacteristicMailbox(Consts.BLECharacteristic.LPF2_ALL, message);
+                     }
+                 }
+-            });
+-            device.writeToCharacteristic(Consts.BLECharacteristic.LPF2_ALL, Buffer.from([0x05, 0x00, 0x01, 0x0b, 0x05]));
+         });
++        await device.writeToCharacteristic(Consts.BLECharacteristic.LPF2_ALL, Buffer.from([0x05, 0x00, 0x01, 0x0b, 0x05]));
++        return hubType;
+     }
+     async _discoveryEventHandler(server) {
+         const device = new WebBLEDevice(server);
++        const discoverComplete = new Promise((resolve) => device.once("discoverComplete", resolve));
+         let hub;
+         let hubType = Consts.HubType.UNKNOWN;
+         let isLPF2Hub = false;
+@@ -149,14 +172,10 @@ export class PoweredUP extends EventEmitter {
+             // tslint:disable-next-line
+         }
+         catch (error) { }
+-        try {
+-            if (hubType !== Consts.HubType.WEDO2_SMART_HUB) {
+-                await device.discoverCharacteristicsForService(Consts.BLEService.LPF2_HUB);
+-                isLPF2Hub = true;
+-            }
+-            // tslint:disable-next-line
++        if (hubType !== Consts.HubType.WEDO2_SMART_HUB) {
++            await device.discoverCharacteristicsForService(Consts.BLEService.LPF2_HUB);
++            isLPF2Hub = true;
+         }
+-        catch (error) { }
+         if (isLPF2Hub) {
+             hubType = await this._determineLPF2HubType(device);
+         }
+@@ -186,9 +205,10 @@ export class PoweredUP extends EventEmitter {
+                 hub = new Mario(device);
+                 break;
+             default:
+-                return;
++                throw new Error("Unsupported hub");
+         }
+-        device.on("discoverComplete", () => {
++        await discoverComplete;
++        {
+             hub.on("connect", () => {
+                 debug(`Hub ${hub.uuid} connected`);
+                 this._connectedHubs[hub.uuid] = hub;
+@@ -204,7 +224,7 @@ export class PoweredUP extends EventEmitter {
+              * @param {WeDo2SmartHub | MoveHub | TechnicMediumHub | RemoteControl | DuploTrainBase} hub
+              */
+             this.emit("discover", hub);
+-        });
++        }
+     }
+ }
+ //# sourceMappingURL=poweredup-browser.js.map
+\ No newline at end of file

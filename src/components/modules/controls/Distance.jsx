@@ -39,8 +39,8 @@ Distance.devices = [
     id: 'sensor',
     label: 'Sensor',
     type: [
-      CONSTS.DeviceType.BOOST_DISTANCE,
-      CONSTS.DeviceType.WEDO2_DISTANCE,
+      CONSTS.DeviceType.COLOR_DISTANCE_SENSOR,
+      CONSTS.DeviceType.MOTION_SENSOR,
     ],
     mode: 0x01,
     events: ['distance'],
