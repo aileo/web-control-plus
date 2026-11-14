@@ -4,7 +4,13 @@ export default () => (
   <nav className="footer">
     <div>
       <div>
-        <img src="images/GitHub-Mark-Light-32px.png" alt="" />
+        <img
+          src={ new URL(
+            '../../assets/images/GitHub-Mark-Light-32px.png',
+            import.meta.url
+          ).toString() }
+          alt=""
+        />
         <span>View on github :</span>
       </div>
     </div>

@@ -1,4 +1,3 @@
-
 export default {
   /**
    * Open modal and store contextual information

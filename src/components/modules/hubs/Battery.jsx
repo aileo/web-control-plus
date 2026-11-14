@@ -8,7 +8,7 @@ export default props => {
       <BatteryStd />
       <span>
         {level}
-%
+        %
       </span>
     </div>
   );

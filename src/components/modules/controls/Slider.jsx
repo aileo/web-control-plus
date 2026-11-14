@@ -130,7 +130,7 @@ class Slider extends PureRenderComponent {
               [isVertical ? 'top' : 'left']: Math.max(Math.min(delta, size), 0),
             } }
           >
-handle
+            handle
           </button>
         </div>
       </div>

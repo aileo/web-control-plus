@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: sync
+          path: ./style
+          target: /app/style
+        - action: sync
+          path: ./assets
+          target: /app/assets
+        - action: sync
+          path: ./index.html
+          target: /app/index.html
+        - action: sync+restart
+          path: ./dev/proxies.json
+          target: /app/dev/proxies.json
+        - action: sync+restart
+          path: ./.proxyrc.js
+          target: /app/.proxyrc.js
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./package-lock.json

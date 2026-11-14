@@ -33,7 +33,28 @@ Ensure to satisfy linter before creating pull request by running `npm run lint`.
 
 ### Development
 
-Start dev server by running `npm run dev` and open your browser at http://127.0.0.1:8000/
+With Docker and Docker Compose installed, start the development server with:
+
+```sh
+docker compose up --build --watch
+```
+
+Open http://localhost:8000/. Compose synchronizes source changes for live
+reload and rebuilds the image when dependencies change. Stop it with Ctrl+C;
+run `docker compose down` to remove the container.
+
+Alternatively, use Node.js 24:
+
+```sh
+npm ci --ignore-scripts
+npm run dev
+```
+
+Install scripts are skipped because the browser client does not use the native
+Bluetooth bindings pulled in by `node-poweredup`. Bluetooth runs in the browser,
+not inside Docker. Use a Web Bluetooth-compatible browser and a secure context:
+localhost works over HTTP, but access from another machine requires HTTPS.
+Configure optional development proxies in `dev/proxies.json`.
 
 ### Build
 
