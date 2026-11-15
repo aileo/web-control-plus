@@ -1,8 +1,7 @@
-import React from 'react';
+import React, { PureComponent } from 'react';
 import classnames from 'classnames';
 
 import { CONSTS } from '../../../core/clients/lego';
-import PureRenderComponent from '../../utils/PureRender';
 
 const defaults = {
   max: 100,
@@ -10,106 +9,29 @@ const defaults = {
   initialValue: 0,
 };
 
-class Slider extends PureRenderComponent {
+class Slider extends PureComponent {
   constructor() {
     super();
     this.updateValue = this.updateValue.bind(this);
-    this.hold = this.hold.bind(this);
-    this.move = this.move.bind(this);
-    this.release = this.release.bind(this);
-
-    this.slide = null;
-    this.interval = null;
-
     this.state = {
-      offset: 0,
-      size: 0,
-      delta: 0,
+      value: defaults.initialValue,
     };
   }
 
-  componentDidMount() {
-    this.initDelta(this.initOffset());
-  }
-
-  initOffset() {
-    const { isVertical, unit } = this.props;
-    const { x, y, width, height } = this.slide.getBoundingClientRect();
-
-    let init = {};
-    if (isVertical) {
-      init = {
-        offset: y,
-        size: height - unit * 0.15,
-      };
-    } else {
-      init = {
-        offset: x,
-        size: width - unit * 0.15,
-      };
-    }
-
-    this.setState(init);
-    return init;
-  }
-
-  initDelta(init) {
-    const { size } = init;
-    const { initialValue, min, max } = defaults;
-
-    this.setState({
-      delta: (initialValue - min) / (max - min) * size,
-    });
-  }
-
-  updateValue() {
+  updateValue(event) {
     const { devices, actions } = this.props;
-    const { delta, size } = this.state;
-    const { min, max } = defaults;
-
-    const speed = Math.max(
-      Math.min(
-        delta / size * (max - min) + min,
-        max
-      ),
-      min
-    );
-
+    const value = event.target.valueAsNumber;
     const { mac, port } = devices.motor;
-    actions.devices.setSpeed({ mac, port, speed });
-  }
 
-  hold() {
-    this.initOffset();
-    window.addEventListener('mouseup', this.release, false);
-    window.addEventListener('mousemove', this.move, true);
-    // this.interval = setInterval(this.updateValue, 50);
-  }
-
-  move(e) {
-    const { isVertical } = this.props;
-    const { offset } = this.state;
-    this.setState({
-      delta: (isVertical ? e.clientY : e.clientX) - offset,
-    });
-  }
-
-  release() {
-    window.removeEventListener('mouseup', this.release, false);
-    window.removeEventListener('mousemove', this.move, true);
-    this.updateValue();
-    // clearInterval(this.interval);
-  }
-
-  componentWillUnmount() {
-    window.removeEventListener('mouseup', this.release, false);
-    window.removeEventListener('mousemove', this.move, true);
-    // clearInterval(this.interval);
+    this.setState({ value });
+    actions.devices.setSpeed({ mac, port, speed: value });
   }
 
   render() {
+    const { value } = this.state;
     const { isVertical } = this.props;
-    const { delta, size } = this.state;
+    const { min, max } = defaults;
+    const position = `${(value - min) / (max - min) * 100}%`;
 
     return (
       <div
@@ -118,20 +40,24 @@ class Slider extends PureRenderComponent {
           vertical: isVertical,
         }) }
       >
-        <div
-          className="slide"
-          ref={ slide => { this.slide = slide; } }
-        >
-          <button
-            type="button"
-            className="handle"
-            onMouseDown={ this.hold }
-            style={ {
-              [isVertical ? 'top' : 'left']: Math.max(Math.min(delta, size), 0),
-            } }
-          >
-            handle
-          </button>
+        <div className="slide">
+          <input
+            type="range"
+            className="slider-input"
+            aria-label="Motor speed"
+            aria-orientation={ isVertical ? 'vertical' : 'horizontal' }
+            min={ min }
+            max={ max }
+            step="1"
+            value={ value }
+            onChange={ this.updateValue }
+          />
+          <div className="slider-overlay" aria-hidden="true">
+            <span
+              className="handle"
+              style={ { [isVertical ? 'top' : 'left']: position } }
+            />
+          </div>
         </div>
       </div>
     );
