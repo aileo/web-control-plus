@@ -34,6 +34,11 @@ It should detect available features from built-in and connected devices
 
 Click on any feature/device to create a new control by selecting type and size, it will be added to the main board.
 
+Motor sliders support mouse, touch, and keyboard input. Focus a slider and use
+the arrow keys to adjust speed or Home/End to select -100/100. Horizontal sliders
+increase from left to right; vertical sliders increase from top to bottom.
+The selected speed is retained when the slider is released.
+
 ### Contributing
 
 Feel free to report [issues](https://github.com/aileo/web-control-plus/issues) or create pull request.
