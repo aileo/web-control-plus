@@ -100,6 +100,24 @@ test('slow discovery still identifies and connects a Technic hub', async () => {
   assert.ok(characteristic.writes.some(write => (
     write[2] === 0x41 && write[3] === 99 && write[9] === 0
   )));
+  characteristic.notify([7, 0, 4, 1, 1, 37, 0]);
+  const sensor = hub.getDeviceAtPort('B');
+  sensor.autoSubscribe = false;
+  const distances = [];
+  sensor.on('distance', ({ distance }) => distances.push(distance));
+  await hub.subscribe(sensor.portId, sensor.type, 1);
+  assert.ok(characteristic.writes.some(write => (
+    write[2] === 0x41 && write[3] === 1 && write[4] === 1 && write[9] === 1
+  )));
+  characteristic.notify([10, 0, 0x47, 1, 1, 1, 0, 0, 0, 1]);
+  for (const value of [0, 1, 5, 10]) {
+    characteristic.notify([5, 0, 0x45, 1, value]);
+  }
+  assert.deepEqual(distances, [0, 5, 107, 234]);
+  await hub.unsubscribe(sensor.portId, 1);
+  assert.ok(characteristic.writes.some(write => (
+    write[2] === 0x41 && write[3] === 1 && write[4] === 1 && write[9] === 0
+  )));
   characteristic.notify([5, 0, 4, 0, 0]);
   assert.equal(hub.getDeviceAtPort('A'), undefined);
 });

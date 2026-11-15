@@ -9,7 +9,8 @@ const Distance = props => {
   const { devices } = props;
   const { distance = [] } = devices.sensor || {};
 
-  const value = Math.round((distance[0] || 255) * STEP);
+  const [reading = 255] = distance;
+  const value = Math.round(reading * STEP);
 
   return (
     <div className="distance control-display">
