@@ -34,6 +34,12 @@ It should detect available features from built-in and connected devices
 
 Click on any feature/device to create a new control by selecting type and size, it will be added to the main board.
 
+For the Boost color and distance sensor, add a distance control to start
+distance updates; connecting the hub alone does not subscribe to distance
+measurements. Move an object toward or away from the sensor to change the
+proximity arcs. A zero-distance reading activates the closest warning.
+The sensor LED color alone does not indicate whether distance updates are active.
+
 Motor sliders support mouse, touch, and keyboard input. Focus a slider and use
 the arrow keys to adjust speed or Home/End to select -100/100. Horizontal sliders
 increase from left to right; vertical sliders increase from top to bottom.
