@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import React, { act } from 'react';
 import { inputField, query } from './helpers/dom.ts';
 import {
@@ -21,6 +22,7 @@ import type { Board, Control } from '../src/core/types.ts';
 const Main = loadSource('components/pages/Main').default;
 const Header = loadSource('components/Header').default;
 const renderHeader = () => React.createElement(Header);
+const { projectExportFilename } = loadSource('core/project-export');
 const renderApp = () =>
   React.createElement(
     React.Fragment,
@@ -49,6 +51,115 @@ function sampleProject(name = 'Workshop') {
     [control]
   );
 }
+
+function exportFixture() {
+  return readFileSync(
+    new URL('./fixtures/project-export-v2.wcp.json', import.meta.url),
+    'utf8'
+  );
+}
+
+test('the export fixture round-trips board colors and saved hardware inventory', () => {
+  const parsed = project.parseProject(exportFixture());
+  assert.equal(project.serializeProject(parsed), JSON.stringify(parsed));
+  assert.equal(parsed.selectedBoardId, 'board-cab');
+  assert.equal(parsed.boards[0].color, 'blue');
+  assert.equal(parsed.boards[1].color, undefined);
+  assert.equal(parsed.hubs[0].uuid, 'hub-fixture');
+  assert.equal(parsed.devices[0].port, 'A');
+});
+
+test('header Download uses the last saved project, not unsaved edits', async (t) => {
+  assert.equal(projectExportFilename('Train / Yard'), 'Train _ Yard.wcp.json');
+  assert.equal(
+    projectExportFilename('Train.wcp.json.wcp.json'),
+    'Train.wcp.json'
+  );
+  assert.equal(projectExportFilename('CON.txt'), 'project.wcp.json');
+  assert.equal(projectExportFilename('...'), 'project.wcp.json');
+  assert.equal(projectExportFilename(undefined), 'project.wcp.json');
+
+  const blobs: Blob[] = [];
+  const revoked: string[] = [];
+  let downloadedFilename = '';
+  let clickFailure = false;
+  const view = await mount(t, {
+    render: renderApp,
+    configureWindow: (window) => {
+      Object.defineProperty(window.URL, 'createObjectURL', {
+        value: (blob: Blob) => {
+          blobs.push(blob);
+          return 'blob:project-export';
+        },
+      });
+      Object.defineProperty(window.URL, 'revokeObjectURL', {
+        value: (url: string) => revoked.push(url),
+      });
+      window.HTMLAnchorElement.prototype.click =
+        function triggerDownloadClick() {
+          if (clickFailure) throw new Error('Download failed');
+          downloadedFilename = this.download;
+        };
+    },
+  });
+  const download = button('Download saved project');
+  assert.equal(download.textContent?.trim(), '');
+  assert.ok(download.hasAttribute('disabled'));
+  const fixture = project.parseProject(exportFixture());
+  await act(async () => view.api.restoreProject(fixture));
+  assert.ok(download.hasAttribute('disabled'));
+
+  const name = 'Saved / Yard.wcp.json';
+  await click(button('Save project'));
+  const saveDialog = query(
+    document,
+    '[role="dialog"][aria-labelledby="project-save-title"]'
+  );
+  await input(inputField(saveDialog, 'input'), name);
+  await click(button('Save', saveDialog));
+  assert.equal(download.hasAttribute('disabled'), false);
+
+  const key = project.storageKeyForProject(name);
+  const storage = view.dom.window.localStorage;
+  const saved = storage.getItem(key);
+  await act(() =>
+    view.api.updateBoardSettings('board-yard', 'Unsaved name', 'green')
+  );
+  await act(() => view.api.selectBoard('board-yard'));
+  assert.equal(view.api.projectDirty, true);
+  await click(download);
+
+  assert.equal(blobs.length, 1, JSON.stringify(view.api.toastMessages));
+  assert.equal(downloadedFilename, 'Saved _ Yard.wcp.json');
+  assert.equal(blobs[0].type, 'application/json');
+  assert.equal(await blobs[0].text(), saved);
+  const exported = project.parseProject(await blobs[0].text());
+  assert.equal(exported.boards[0].color, 'blue');
+  assert.equal(exported.selectedBoardId, 'board-cab');
+  assert.equal(view.api.selectedBoardId, 'board-yard');
+  assert.equal(view.api.projectDirty, true);
+  assert.equal(storage.getItem(key), saved);
+  assert.deepEqual(revoked, ['blob:project-export']);
+  assert.equal(document.querySelector('a[download]'), null);
+
+  clickFailure = true;
+  await click(download);
+  assert.deepEqual(revoked, ['blob:project-export', 'blob:project-export']);
+  assert.equal(document.querySelector('a[download]'), null);
+  assert.ok(
+    view.api.toastMessages.some(({ text }) => text.includes('Download failed'))
+  );
+
+  storage.removeItem(key);
+  await click(download);
+  assert.equal(blobs.length, 2);
+  assert.ok(
+    view.api.toastMessages.some(({ text }) =>
+      text.includes('missing or unreadable')
+    )
+  );
+  assert.equal(storage.getItem(key), null);
+});
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();

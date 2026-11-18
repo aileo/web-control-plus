@@ -69,6 +69,7 @@ type SourceModules = {
   'core/controlTypes': typeof import('../../src/core/controlTypes.ts');
   'core/control-layout': typeof import('../../src/core/control-layout.ts');
   'core/project': typeof import('../../src/core/project.ts');
+  'core/project-export': typeof import('../../src/core/project-export.ts');
   'utils/deviceTypes': typeof import('../../src/utils/deviceTypes.ts');
   'theme/colors': typeof import('../../src/theme/colors.ts');
 };
@@ -110,6 +111,7 @@ export function createSourceLoader({
       exports,
       console,
       URL,
+      Blob,
       require: (id: string): unknown => {
         if (hooks && /\/hooks(?:\/index(?:\.ts)?)?$/.test(id)) return hooks;
         if (/clients\/lego(?:\.ts)?$/.test(id)) {

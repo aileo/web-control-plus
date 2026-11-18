@@ -14,12 +14,14 @@ import {
   TextField,
   Tooltip,
 } from '@mui/material';
+import Download from '@mui/icons-material/Download';
 import FolderOpen from '@mui/icons-material/FolderOpen';
 import Save from '@mui/icons-material/Save';
 import {
   useAllControls,
   useActiveLocalSave,
   useMarkProjectSaved,
+  usePostMessage,
   useProjectBusy,
   useProjectDirty,
   useProjectSnapshot,
@@ -38,6 +40,7 @@ import {
   type LocalProjectIdentity,
   type SavedProject,
 } from '../core/project';
+import { downloadProject } from '../core/project-export';
 
 const projectDialogSx = {
   '& .MuiButtonBase-root.Mui-focusVisible': {
@@ -68,6 +71,7 @@ function ProjectActions() {
   const setActiveLocalSave = useSetActiveLocalSave();
   const projectDirty = useProjectDirty();
   const projectBusy = useProjectBusy();
+  const postMessage = usePostMessage();
   const hasSaveSource =
     [...hubs.values()].some((hub) => hub.online) ||
     [...allControls.values()].some((control) => Boolean(control.uuid));
@@ -183,6 +187,15 @@ function ProjectActions() {
     }
   };
 
+  const downloadSavedProject = () => {
+    if (!activeLocalSave || projectBusy) return;
+    try {
+      downloadProject(readSavedProject(activeLocalSave.id));
+    } catch (cause) {
+      postMessage({ level: 'error', text: errorMessage(cause) });
+    }
+  };
+
   return (
     <>
       <Stack
@@ -216,6 +229,28 @@ function ProjectActions() {
           >
             <FolderOpen />
           </IconButton>
+        </Tooltip>
+        <Tooltip
+          title="Download last saved version (.wcp.json)"
+          describeChild
+          disableInteractive
+        >
+          <span style={{ display: 'inline-flex' }}>
+            <IconButton
+              aria-label="Download saved project"
+              color="inherit"
+              disabled={!activeLocalSave || projectBusy}
+              onClick={downloadSavedProject}
+              sx={{
+                '&.Mui-focusVisible': {
+                  outline: '2px solid currentColor',
+                  outlineOffset: 2,
+                },
+              }}
+            >
+              <Download />
+            </IconButton>
+          </span>
         </Tooltip>
       </Stack>
       <Dialog
