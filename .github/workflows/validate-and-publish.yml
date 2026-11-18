@@ -1,0 +1,75 @@
+name: Validate and publish
+
+on:
+  push:
+    branches: [main, v2]
+    tags: ['v2.[0-9]+.[0-9]+']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Check release tag
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          const tag = process.env.RELEASE_TAG;
+          if (!/^v2\.\d+\.\d+$/.test(tag) || tag !== `v${version}`) {
+            throw new Error('Use a stable v2.x.y tag matching package.json.');
+          }
+          NODE
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Release tags must point to a commit on main."
+            exit 1
+          fi
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Configure Pages
+        if: github.ref_type == 'tag'
+        uses: actions/configure-pages@v6.0.0
+      - name: Upload Pages artifact
+        if: github.ref_type == 'tag'
+        uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: dist
+
+  deploy:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5.0.1

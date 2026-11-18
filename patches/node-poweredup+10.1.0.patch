@@ -181,3 +181,47 @@ index d354419..51ac70b 100644
  }
  //# sourceMappingURL=poweredup-browser.js.map
 \ No newline at end of file
+diff --git a/node_modules/node-poweredup/dist/devices/colordistancesensor.js b/node_modules/node-poweredup/dist/devices/colordistancesensor.js
+--- a/node_modules/node-poweredup/dist/devices/colordistancesensor.js
++++ b/node_modules/node-poweredup/dist/devices/colordistancesensor.js
+@@ -15,3 +15,7 @@
+             case Mode.COLOR:
+-                if (message[this.isWeDo2SmartHub ? 2 : 4] <= 10) {
++                if (message.length !== (this.isWeDo2SmartHub ? 3 : 5)) {
++                    break;
++                }
++                if (message[this.isWeDo2SmartHub ? 2 : 4] <= 10 ||
++                    message[this.isWeDo2SmartHub ? 2 : 4] === Consts.Color.NONE) {
+                     const color = parseColor(message[this.isWeDo2SmartHub ? 2 : 4]);
+@@ -117,4 +121,4 @@
+             case Mode.COLOR_AND_DISTANCE:
+-                if (this.isWeDo2SmartHub) {
++                if (this.isWeDo2SmartHub || message.length !== 8) {
+                     break;
+                 }
+@@ -138,4 +142,4 @@
+-                if (message[4] <= 10) {
+-                    const color = message[4];
++                if (message[4] <= 10 || message[4] === Consts.Color.NONE) {
++                    const color = parseColor(message[4]);
+                     this.notify("colorAndDistance", { color, distance });
+                 }
+diff --git a/node_modules/node-poweredup/dist/devices/techniccolorsensor.js b/node_modules/node-poweredup/dist/devices/techniccolorsensor.js
+--- a/node_modules/node-poweredup/dist/devices/techniccolorsensor.js
++++ b/node_modules/node-poweredup/dist/devices/techniccolorsensor.js
+@@ -25,3 +25,3 @@
+-                if (message[4] <= 10) {
++                if (message[4] <= 10 || message[4] === Consts.Color.NONE) {
+                     const color = parseColor(message[4]);
+                     /**
+diff --git a/node_modules/node-poweredup/dist/devices/duplotrainbasecolorsensor.js b/node_modules/node-poweredup/dist/devices/duplotrainbasecolorsensor.js
+--- a/node_modules/node-poweredup/dist/devices/duplotrainbasecolorsensor.js
++++ b/node_modules/node-poweredup/dist/devices/duplotrainbasecolorsensor.js
+@@ -29,3 +29,6 @@
+             case Mode.COLOR:
+-                if (message[4] <= 10) {
++                if (message.length !== 5) {
++                    break;
++                }
++                if (message[4] <= 10 || message[4] === Consts.Color.NONE) {
+                     const color = parseColor(message[4]);

@@ -3,14 +3,13 @@ services:
     build: .
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - ./src:/app/src
+    environment:
+      LINT_FIX_WATCH: "true"
+      CHOKIDAR_USEPOLLING: "true"
     develop:
       watch:
-        - action: sync
-          path: ./src
-          target: /app/src
-        - action: sync
-          path: ./style
-          target: /app/style
         - action: sync
           path: ./assets
           target: /app/assets
@@ -21,8 +20,20 @@ services:
           path: ./dev/proxies.json
           target: /app/dev/proxies.json
         - action: sync+restart
-          path: ./.proxyrc.js
-          target: /app/.proxyrc.js
+          path: ./vite.config.ts
+          target: /app/vite.config.ts
+        - action: sync
+          path: ./tsconfig.json
+          target: /app/tsconfig.json
+        - action: sync
+          path: ./tests
+          target: /app/tests
+        - action: sync
+          path: ./.eslintrc.yml
+          target: /app/.eslintrc.yml
+        - action: sync
+          path: ./.prettierrc
+          target: /app/.prettierrc
         - action: rebuild
           path: ./package.json
         - action: rebuild
