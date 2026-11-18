@@ -1,5 +1,6 @@
 import type { Device } from 'node-poweredup/dist/devices/device.js';
 import type { BaseHub } from 'node-poweredup/dist/hubs/basehub.js';
+import type { BoardColor } from './board-colors';
 
 export type LightControlType =
   'brightness' | 'power' | 'palette' | 'customColor';
@@ -87,6 +88,7 @@ export type Board = {
   id: string;
   name: string;
   controlIds: string[];
+  color?: BoardColor;
 };
 
 export type DeviceTypeInfo = {

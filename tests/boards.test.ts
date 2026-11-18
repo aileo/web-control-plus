@@ -12,6 +12,7 @@ import {
   pointer,
   click,
   button,
+  input,
 } from './helpers/controls.ts';
 
 const Main = loadSource('components/pages/Main').default;
@@ -94,6 +95,7 @@ test('tab activity clears on disconnect and populated removal asks for confirmat
   assert.ok(document.querySelector('[aria-label="Motor commanded to run"]'));
   await click(button('Add board'));
   await act(() => view.api.selectBoard(view.api.boards[0].id));
+  await click(button('Settings for Board 1'));
   await click(button('Remove board'));
   assert.match(
     present(document.querySelector('[role="dialog"]')).textContent ?? '',
@@ -106,6 +108,75 @@ test('tab activity clears on disconnect and populated removal asks for confirmat
     document.querySelector('[aria-label="Motor commanded to run"]'),
     null
   );
+});
+
+test('tab actions rename and configure colors while preserving tab keyboard navigation', async (t) => {
+  const view = await mount(t, { render });
+  const edit = button('Rename Board 1');
+  await act(() => edit.focus());
+  await click(edit);
+  const nameInput = present(
+    document.querySelector<HTMLInputElement>('[role="dialog"] input')
+  );
+  assert.equal(document.activeElement, nameInput);
+  await input(nameInput, 'Trains');
+  await click(button('Save'));
+  assert.equal(view.api.boards[0].name, 'Trains');
+  await click(button('Settings for Trains'));
+  const blue = present(
+    document.querySelector<HTMLInputElement>('input[value="blue"]')
+  );
+  await click(blue);
+  const settingsName = present(
+    document.querySelector<HTMLInputElement>('[role="dialog"] input')
+  );
+  await input(settingsName, ' ');
+  await click(button('Save'));
+  assert.equal(view.api.boards[0].name, 'Trains');
+  assert.equal(view.api.boards[0].color, undefined);
+  await input(settingsName, 'Trains');
+  await click(button('Save'));
+  assert.equal(view.api.boards[0].color, 'blue');
+  assert.equal(document.querySelectorAll('[role="tab"] button').length, 0);
+  await click(button('Add board'));
+  const secondId = view.api.selectedBoardId;
+  const second = present(document.getElementById(`tab-${secondId}`));
+  await act(() => second.focus());
+  await key(second, 'keydown', 'ArrowLeft');
+  assert.equal(view.api.selectedBoardId, view.api.boards[0].id);
+  assert.equal(document.activeElement?.id, `tab-${view.api.boards[0].id}`);
+  assert.ok(button('Rename Trains'));
+  await click(button('Settings for Trains'));
+  await click(
+    present(document.querySelector<HTMLInputElement>('input[value=""]'))
+  );
+  await click(button('Save'));
+  assert.equal(view.api.boards[0].color, undefined);
+});
+
+test('closing settings returns focus and deleting a board focuses the surviving tab', async (t) => {
+  const view = await mount(t, { render });
+  const settings = button('Settings for Board 1');
+  await act(() => settings.focus());
+  await click(settings);
+  await click(button('Cancel'));
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 300);
+    });
+  });
+  assert.equal(document.activeElement, settings);
+  await click(button('Add board'));
+  const first = view.api.boards[0].id;
+  await click(button('Settings for Board 2'));
+  await click(button('Remove board'));
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 300);
+    });
+  });
+  assert.equal(view.api.selectedBoardId, first);
+  assert.equal(document.activeElement?.id, `tab-${first}`);
 });
 
 test('switching releases momentary pointer inputs and removal stops only that board', async (t) => {

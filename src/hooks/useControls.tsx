@@ -23,6 +23,7 @@ import {
   findSpace,
   isSupportedSize,
 } from '../core/control-layout';
+import { isBoardColor, type BoardColor } from '../core/board-colors';
 import type {
   BoardOccupant,
   Board,
@@ -124,6 +125,7 @@ type ControlContextValue = {
   addBoard: () => void;
   selectBoard: (id: string) => void;
   renameBoard: (id: string, name: string) => void;
+  updateBoardSettings: (id: string, name: string, color?: BoardColor) => void;
   removeBoard: (id: string) => Promise<void>;
   stopAll: () => Promise<void>;
   occupancy: ReadonlyMap<string, BoardOccupant>;
@@ -1065,9 +1067,25 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         const trimmed = name.trim();
         if (!trimmed || trimmed.length > 80)
           throw new Error('Enter a board name between 1 and 80 characters');
+        if (!boardsRef.current.some((board) => board.id === id))
+          throw new Error('Board no longer exists');
         updateBoards(
           boardsRef.current.map((board) =>
             board.id === id ? { ...board, name: trimmed } : board
+          )
+        );
+      },
+      updateBoardSettings: (id: string, name: string, color?: BoardColor) => {
+        const trimmed = name.trim();
+        if (!trimmed || trimmed.length > 80)
+          throw new Error('Enter a board name between 1 and 80 characters');
+        if (color !== undefined && !isBoardColor(color))
+          throw new Error('Invalid board color');
+        if (!boardsRef.current.some((board) => board.id === id))
+          throw new Error('Board no longer exists');
+        updateBoards(
+          boardsRef.current.map((board) =>
+            board.id === id ? { ...board, name: trimmed, color } : board
           )
         );
       },
@@ -1193,6 +1211,7 @@ export const useActiveBoards = hookFactory('activeBoards');
 export const useAddBoard = hookFactory('addBoard');
 export const useSelectBoard = hookFactory('selectBoard');
 export const useRenameBoard = hookFactory('renameBoard');
+export const useUpdateBoardSettings = hookFactory('updateBoardSettings');
 export const useRemoveBoard = hookFactory('removeBoard');
 export const useStopAll = hookFactory('stopAll');
 export const useBoardOccupancy = hookFactory('occupancy');
