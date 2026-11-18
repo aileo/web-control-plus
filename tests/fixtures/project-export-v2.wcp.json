@@ -1,0 +1,56 @@
+{
+  "format": "web-control-plus/project",
+  "version": 2,
+  "name": "Fixture project",
+  "boards": [
+    {
+      "id": "board-yard",
+      "name": "Yard",
+      "controlIds": ["control-train"],
+      "color": "blue"
+    },
+    {
+      "id": "board-cab",
+      "name": "Cab",
+      "controlIds": []
+    }
+  ],
+  "selectedBoardId": "board-cab",
+  "controls": [
+    {
+      "id": "control-train",
+      "type": "arrows",
+      "uuid": "hub-fixture",
+      "port": "A",
+      "title": "Train",
+      "x": 2,
+      "y": 1,
+      "w": 1,
+      "h": 2,
+      "options": {
+        "speed": 42,
+        "stopOnRelease": false,
+        "forwardKey": "q",
+        "stopKey": "s",
+        "backwardKey": "a"
+      }
+    }
+  ],
+  "hubs": [
+    {
+      "uuid": "hub-fixture",
+      "name": "Yard Hub",
+      "mac": "",
+      "type": { "num": 0, "text": "UNKNOWN", "compact": "UNKNOWN" },
+      "color": "#808080"
+    }
+  ],
+  "devices": [
+    {
+      "uuid": "hub-fixture",
+      "mac": "",
+      "port": "A",
+      "type": { "num": 0, "text": "UNKNOWN", "compact": "UNKNOWN" }
+    }
+  ]
+}

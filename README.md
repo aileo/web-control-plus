@@ -50,6 +50,11 @@ Switching boards releases momentary inputs; fixed-speed motors keep running.
 The motor icon on a tab indicates a motor was commanded to run, not verified
 physical motion. It clears on a confirmed stop or disconnect.
 
+The header's **Download saved project** icon exports the active project's last
+saved version as a `.wcp.json` file. Save first to include any unsaved edits.
+The file uses the saved project's name and includes all boards, the selected
+tab, controls, and saved hardware inventory—not live connection or motor state.
+
 The board has 10 by 6 studs and grows or shrinks to fit the available screen
 space, including fullscreen, without stretching its round studs. Tiles touch
 edge-to-edge. The initial 3 by 3 **How it works** tile includes Connect hub in
