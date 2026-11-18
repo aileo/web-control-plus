@@ -54,6 +54,7 @@ type SourceModules = {
   'components/ToastViewport': typeof import('../../src/components/ToastViewport.tsx');
   'components/Modal': typeof import('../../src/components/Modal.tsx');
   'components/modules/grid/Grid': typeof import('../../src/components/modules/grid/Grid.tsx');
+  'components/pages/Main': typeof import('../../src/components/pages/Main.tsx');
   'components/modules/controls/Distance': typeof import('../../src/components/modules/controls/Distance.tsx');
   'components/modules/controls/ControlPreview': typeof import('../../src/components/modules/controls/ControlPreview.tsx');
   'components/modules/controls/Size': typeof import('../../src/components/modules/controls/Size.tsx');
@@ -366,6 +367,13 @@ export async function mount(
   function useProbeAPI() {
     return {
       controls: controls.useControls(),
+      boards: controls.useBoards(),
+      selectedBoardId: controls.useSelectedBoardId(),
+      activeBoards: controls.useActiveBoards(),
+      addBoard: controls.useAddBoard(),
+      selectBoard: controls.useSelectBoard(),
+      removeBoard: controls.useRemoveBoard(),
+      stopAll: controls.useStopAll(),
       error: controls.useControlsError(),
       create: controls.useAddControl(),
       update: controls.useUpdateControl(),

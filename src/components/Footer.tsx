@@ -1,15 +1,19 @@
 import React from 'react';
 import { AppBar, Toolbar, Stack, Link, Button } from '@mui/material';
-import { useOpenModal } from '../hooks';
+import StopCircle from '@mui/icons-material/StopCircle';
+import { useOpenModal, usePostMessage, useStopAll } from '../hooks';
+import errorMessage from '../utils/errorMessage';
 
 function Footer() {
   const openModal = useOpenModal();
+  const stop = useStopAll();
+  const postMessage = usePostMessage();
   return (
     <AppBar
-      position="static"
+      position="sticky"
       component="footer"
       color="info"
-      sx={{ top: 'auto', bottom: 0 }}
+      sx={{ top: 'auto', bottom: 0, flexShrink: 0 }}
     >
       <Toolbar sx={{ justifyContent: 'center' }}>
         <Stack
@@ -63,6 +67,18 @@ function Footer() {
             }}
           >
             Help
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={<StopCircle />}
+            onClick={() => {
+              void stop().catch((cause) =>
+                postMessage({ level: 'error', text: errorMessage(cause) })
+              );
+            }}
+          >
+            Stop all motors
           </Button>
         </Stack>
       </Toolbar>
