@@ -55,6 +55,11 @@ saved version as a `.wcp.json` file. Save first to include any unsaved edits.
 The file uses the saved project's name and includes all boards, the selected
 tab, controls, and saved hardware inventory—not live connection or motor state.
 
+Use **Import project** above the local saves in the Open Project dialog.
+Import validates the `.wcp.json` file, then opens and saves it in this browser
+under the name in the file. It asks before replacing a same-name save or
+discarding unsaved changes. Opening or importing does not connect hardware.
+
 The board has 10 by 6 studs and grows or shrinks to fit the available screen
 space, including fullscreen, without stretching its round studs. Tiles touch
 edge-to-edge. The initial 3 by 3 **How it works** tile includes Connect hub in

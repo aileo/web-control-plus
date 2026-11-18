@@ -12,6 +12,7 @@ import type {
 
 export const PROJECT_FORMAT = 'web-control-plus/project';
 export const PROJECT_VERSION = 2;
+export const PROJECT_FILE_SUFFIX = '.wcp.json';
 const STORAGE_PREFIX = 'web-control-plus:project:';
 
 export type ProjectHub = Pick<

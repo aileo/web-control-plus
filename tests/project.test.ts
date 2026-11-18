@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import React, { act } from 'react';
-import { inputField, query } from './helpers/dom.ts';
+import { inputField, present, query } from './helpers/dom.ts';
 import {
   button,
   click,
@@ -15,6 +15,7 @@ import {
   loadSource,
   mount,
   project,
+  projectImport,
   visibleText,
 } from './helpers/controls.ts';
 import type { Board, Control } from '../src/core/types.ts';
@@ -30,6 +31,14 @@ const renderApp = () =>
     React.createElement(Header),
     React.createElement(Main)
   );
+
+async function waitForDialogExit() {
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 650);
+    });
+  });
+}
 
 function sampleProject(name = 'Workshop') {
   const control = {
@@ -159,6 +168,33 @@ test('header Download uses the last saved project, not unsaved edits', async (t)
     )
   );
   assert.equal(storage.getItem(key), null);
+});
+
+test('project file parsing requires the project suffix and validates contents', () => {
+  const fixture = readFileSync(
+    new URL('./fixtures/project-export-v2.wcp.json', import.meta.url),
+    'utf8'
+  );
+  assert.equal(
+    projectImport.parseProjectFile('fixture.WCP.JSON', fixture).name,
+    'Fixture project'
+  );
+  assert.throws(
+    () => projectImport.parseProjectFile('fixture.json', fixture),
+    /\.wcp\.json/
+  );
+  assert.throws(
+    () => projectImport.parseProjectFile('fixture.wcp.json', '{invalid'),
+    /not valid JSON/
+  );
+  assert.throws(
+    () =>
+      projectImport.parseProjectFile(
+        'fixture.wcp.json',
+        JSON.stringify({ ...sampleProject(), version: 1 })
+      ),
+    /project format version 2/
+  );
 });
 
 class MemoryStorage implements Storage {
@@ -381,14 +417,6 @@ test('named project save, reopen, resave, copy and collision use active identity
     '[role="dialog"][aria-labelledby="project-confirm-title"]';
   const confirmationDialog = () => query(document, confirmationSelector);
   const submitSave = () => click(button('Save', saveDialog()));
-  const assertNoOverwrite = () =>
-    assert.equal(
-      document
-        .querySelector(`${confirmationSelector} #project-confirm-title`)
-        ?.textContent?.trim() === 'Overwrite saved project?',
-      false,
-      'Resaving the active project should not prompt for overwrite'
-    );
 
   fakeHub();
   await act(() => view.api.addHub());
@@ -406,6 +434,7 @@ test('named project save, reopen, resave, copy and collision use active identity
     project.storageKeyForProject('Workshop')
   );
   assert.equal(view.api.activeLocalSave?.name, 'Workshop');
+  await waitForDialogExit();
 
   await act(() => view.api.updateBoardSettings(boardId, 'Board 1'));
   assert.equal(view.api.projectDirty, true);
@@ -414,8 +443,17 @@ test('named project save, reopen, resave, copy and collision use active identity
     document,
     '[role="dialog"][aria-labelledby="project-open-title"]'
   );
-  await click(query(openDialog, '.MuiListItemButton-root'));
+  const savedButton = query(openDialog, '.MuiListItemButton-root');
+  await click(savedButton);
+  await click(button('Cancel', confirmationDialog()));
+  await waitForDialogExit();
+  assert.ok(
+    document.activeElement === savedButton,
+    'Focus returns to the saved item'
+  );
+  await click(savedButton);
   await click(button('Discard and open', confirmationDialog()));
+  await waitForDialogExit();
   assert.equal(view.api.boards[0].color, 'blue');
   assert.equal(view.api.projectDirty, false);
   assert.equal(view.api.activeLocalSave?.name, 'Workshop');
@@ -424,12 +462,19 @@ test('named project save, reopen, resave, copy and collision use active identity
   await click(button('Save project'));
   assert.equal(projectName().value, 'Workshop');
   await submitSave();
-  assertNoOverwrite();
+  assert.equal(
+    document
+      .querySelector(`${confirmationSelector} #project-confirm-title`)
+      ?.textContent?.trim() === 'Overwrite saved project?',
+    false,
+    'Resaving the active project should not prompt for overwrite'
+  );
   assert.equal(view.api.projectDirty, false);
   let saved = project
     .listSavedProjects()
     .find((item) => item.name === 'Workshop');
   assert.equal(saved?.snapshot?.boards[0].name, 'Renamed');
+  await waitForDialogExit();
 
   await click(button('Save project'));
   assert.equal(projectName().value, 'Workshop');
@@ -441,6 +486,7 @@ test('named project save, reopen, resave, copy and collision use active identity
     .listSavedProjects()
     .find((item) => item.name === 'Workshop Copy');
   assert.equal(savedCopy?.snapshot?.boards[0].name, 'Renamed');
+  await waitForDialogExit();
 
   await act(() =>
     view.api.updateBoardSettings(boardId, 'Copy changes', 'blue')
@@ -452,7 +498,13 @@ test('named project save, reopen, resave, copy and collision use active identity
   const confirmation = confirmationDialog();
   assert.match(confirmation.textContent ?? '', /Overwrite saved project/);
   assert.equal(view.api.activeLocalSave?.name, 'Workshop Copy');
+  const overwriteTrigger = button('Save', saveDialog());
   await click(button('Cancel', confirmation));
+  await waitForDialogExit();
+  assert.ok(
+    document.activeElement === overwriteTrigger,
+    'Focus returns to Save'
+  );
   saved = project.listSavedProjects().find((item) => item.name === 'Workshop');
   assert.equal(saved?.snapshot?.boards[0].name, 'Renamed');
   assert.equal(
@@ -461,6 +513,11 @@ test('named project save, reopen, resave, copy and collision use active identity
     'Renamed'
   );
   assert.equal(view.api.activeLocalSave?.name, 'Workshop Copy');
+  await click(overwriteTrigger);
+  await click(button('Overwrite', confirmationDialog()));
+  saved = project.listSavedProjects().find((item) => item.name === 'Workshop');
+  assert.equal(saved?.snapshot?.boards[0].name, 'Copy changes');
+  assert.equal(view.api.activeLocalSave?.name, 'Workshop');
 });
 
 test('header project actions gate Save by live hubs or hub-linked controls', async (t) => {
@@ -479,6 +536,13 @@ test('header project actions gate Save by live hubs or hub-linked controls', asy
   assert.equal(open.getAttribute('disabled'), null);
   await act(() => open.focus());
   await click(open);
+  const importAction = button('Import project');
+  assert.equal(importAction.textContent?.trim(), 'Import project');
+  assert.ok(importAction.querySelector('svg'));
+  assert.match(
+    importAction.nextElementSibling?.textContent ?? '',
+    /No saved projects yet/
+  );
   assert.match(
     document.querySelector('[aria-labelledby="project-open-title"]')
       ?.textContent ?? '',
@@ -515,20 +579,27 @@ test('header project actions gate Save by live hubs or hub-linked controls', asy
   await act(() => save.focus());
   await click(save);
   assert.equal(
-    document.activeElement === document.querySelector('input'),
+    document.activeElement ===
+      document.querySelector<HTMLInputElement>('input[type="text"]'),
     true
   );
   await click(button('Cancel'));
   await waitForTransition();
   assert.equal(document.activeElement === save, true);
   await click(save);
-  await input(document.querySelector('input')!, 'Offline');
+  await input(
+    document.querySelector<HTMLInputElement>('input[type="text"]')!,
+    'Offline'
+  );
   await click(button('Save'));
   assert.equal(project.listSavedProjects().length, 1);
   assert.equal(view.api.activeLocalSave?.name, 'Offline');
   await act(() => view.api.updateBoardSettings('empty-board', 'Empty changed'));
   await click(button('Save project'));
-  assert.equal(document.querySelector('input')?.value, 'Offline');
+  assert.equal(
+    document.querySelector<HTMLInputElement>('input[type="text"]')?.value,
+    'Offline'
+  );
   await click(button('Save'));
   assert.equal(
     document.querySelector('[aria-labelledby="project-confirm-title"]'),
@@ -542,6 +613,325 @@ test('header project actions gate Save by live hubs or hub-linked controls', asy
   await act(async () => view.api.remove('offline-control'));
   assert.equal(button('Save project').getAttribute('disabled') !== null, true);
   assert.equal(button('Save').getAttribute('disabled') !== null, true);
+});
+
+test('import combines save replacement and dirty-layout confirmation', async (t) => {
+  const fixture = readFileSync(
+    new URL('./fixtures/project-export-v2.wcp.json', import.meta.url),
+    'utf8'
+  );
+  const view = await mount(t, { render: renderApp });
+  const imported = project.parseProject(fixture);
+  const saved = sampleProject(imported.name.toUpperCase());
+  project.saveProject(saved);
+  const savedBefore = view.dom.window.localStorage.getItem(
+    project.storageKeyForProject(saved.name)
+  );
+  const activeSave = {
+    id: project.storageKeyForProject(saved.name),
+    name: saved.name,
+  };
+  await act(() => view.api.setActiveLocalSave(activeSave));
+  await click(button('Add board'));
+  await click(button('Open project'));
+  assert.equal(
+    button('Import project').nextElementSibling?.getAttribute('aria-label'),
+    'Saved projects'
+  );
+
+  const chooseFile = async () => {
+    const file = new view.dom.window.File([fixture], 'fixture.WCP.JSON', {
+      type: 'application/json',
+    });
+    Object.defineProperty(file, 'text', { value: async () => fixture });
+    const picker =
+      document.querySelector<HTMLInputElement>('input[type="file"]');
+    assert.ok(picker);
+    Object.defineProperty(picker, 'files', {
+      configurable: true,
+      value: [file],
+    });
+    await act(async () => {
+      picker.dispatchEvent(
+        new view.dom.window.Event('change', { bubbles: true })
+      );
+      await Promise.resolve();
+    });
+  };
+
+  await chooseFile();
+  const confirmationDialog = document.querySelector(
+    '[aria-labelledby="project-confirm-title"]'
+  );
+  assert.match(
+    present(confirmationDialog).textContent ?? '',
+    /Fixture project.*replace the existing local save.*unsaved project changes/
+  );
+  await click(button('Cancel'));
+  assert.equal(view.api.activeLocalSave?.id, activeSave.id);
+  assert.equal(view.api.activeLocalSave?.name, activeSave.name);
+  assert.equal(view.api.boards.length, 2);
+  assert.equal(
+    view.dom.window.localStorage.getItem(activeSave.id),
+    savedBefore
+  );
+  await waitForDialogExit();
+  assert.equal(document.activeElement === button('Import project'), true);
+
+  await chooseFile();
+  await click(button('Import and save'));
+  assert.equal(view.api.activeLocalSave?.name, imported.name);
+  assert.equal(
+    button('Download saved project').hasAttribute('disabled'),
+    false
+  );
+  assert.equal(
+    JSON.stringify(view.api.boards.map(({ id, name }) => [id, name])),
+    JSON.stringify([
+      ['board-yard', 'Yard'],
+      ['board-cab', 'Cab'],
+    ])
+  );
+  assert.equal(view.api.selectedBoardId, 'board-cab');
+  assert.equal(view.api.boards[0].color, 'blue');
+  assert.equal(view.api.boards[1].color, undefined);
+  assert.equal(view.api.hubs.get('hub-fixture')?.online, false);
+  await waitForDialogExit();
+  assert.equal(document.activeElement === button('Open project'), true);
+  await click(button('Save project'));
+  assert.equal(
+    document.querySelector<HTMLInputElement>('input[type="text"]')?.value,
+    imported.name
+  );
+  await click(button('Cancel'));
+  await waitForDialogExit();
+  await click(button('Settings for Cab'));
+  assert.equal(button('Default').getAttribute('aria-pressed'), 'true');
+  assert.equal(
+    view.dom.window.localStorage.getItem(
+      project.storageKeyForProject(saved.name)
+    ),
+    project.serializeProject(imported)
+  );
+});
+
+test('import storage failure leaves the layout and local-save identity unchanged', async (t) => {
+  const view = await mount(t, { render: renderApp });
+  const incoming = project.createProjectSnapshot(
+    'Incoming',
+    [{ id: 'incoming-board', name: 'Incoming board', controlIds: [] }],
+    'incoming-board',
+    []
+  );
+  const outgoing = sampleProject('Outgoing');
+  const storage = view.dom.window.localStorage;
+  project.saveProject(outgoing);
+  const activeSave = {
+    id: project.storageKeyForProject(outgoing.name),
+    name: outgoing.name,
+  };
+  await act(async () => {
+    await view.api.restoreProject(outgoing);
+    view.api.setActiveLocalSave(activeSave);
+  });
+  const before = storage.getItem(activeSave.id);
+  const serialized = project.serializeProject(incoming);
+  const file = new view.dom.window.File([serialized], 'incoming.wcp.json');
+  Object.defineProperty(file, 'text', { value: async () => serialized });
+  const storagePrototype = Object.getPrototypeOf(storage);
+  const originalSetItem = storagePrototype.setItem;
+  storagePrototype.setItem = () => {
+    throw new Error('QuotaExceededError');
+  };
+  try {
+    await click(button('Open project'));
+    const picker = present(document.querySelector('input[type="file"]'));
+    Object.defineProperty(picker, 'files', { value: [file] });
+    await act(async () => {
+      picker.dispatchEvent(
+        new view.dom.window.Event('change', { bubbles: true })
+      );
+    });
+    assert.match(
+      document.querySelector('[role="alert"]')?.textContent ?? '',
+      /could not be saved/
+    );
+    assert.equal(view.api.activeLocalSave?.id, activeSave.id);
+    assert.equal(view.api.controls.get('control-1')?.title, 'Train');
+    assert.equal(storage.getItem(activeSave.id), before);
+    assert.equal(
+      storage.getItem(project.storageKeyForProject(incoming.name)),
+      null
+    );
+  } finally {
+    storagePrototype.setItem = originalSetItem;
+  }
+  const picker = present(document.querySelector('input[type="file"]'));
+  await act(async () => {
+    picker.dispatchEvent(
+      new view.dom.window.Event('change', { bubbles: true })
+    );
+  });
+  assert.equal(view.api.selectedBoardId, 'incoming-board');
+  assert.equal(view.api.activeLocalSave?.name, incoming.name);
+  assert.equal(
+    storage.getItem(project.storageKeyForProject(incoming.name)),
+    serialized
+  );
+  assert.equal(storage.getItem(activeSave.id), before);
+});
+
+test('prepared import refuses newly created and changed local saves', async (t) => {
+  const view = await mount(t);
+  const snapshot = sampleProject('Workshop');
+  const key = project.storageKeyForProject(snapshot.name);
+  const storage = view.dom.window.localStorage;
+  const first = projectImport.prepareProjectImport(snapshot);
+  storage.setItem(key, 'new entry');
+  assert.throws(first.commit, /saved project changed/);
+  assert.equal(storage.getItem(key), 'new entry');
+
+  const replacement = projectImport.prepareProjectImport(snapshot);
+  assert.equal(replacement.replacesSave, true);
+  storage.setItem(key, 'updated entry');
+  assert.throws(replacement.commit, /saved project changed/);
+  assert.equal(storage.getItem(key), 'updated entry');
+});
+
+test('invalid project file imports leave the active project and local saves unchanged', async (t) => {
+  const view = await mount(t, { render: renderApp });
+  assert.throws(() => button('Import project'), /Button not found/);
+  await click(button('Open project'));
+  assert.equal(button('Import project').hasAttribute('disabled'), false);
+  const original = project.createProjectSnapshot(
+    'Saved project',
+    [{ id: 'board-1', name: 'Yard', controlIds: [] }],
+    'board-1',
+    []
+  );
+  project.saveProject(original);
+  const activeSave = {
+    id: project.storageKeyForProject(original.name),
+    name: original.name,
+  };
+  await act(() => view.api.setActiveLocalSave(activeSave));
+  const savedBefore = view.dom.window.localStorage.getItem(
+    project.storageKeyForProject(original.name)
+  );
+  const activeBefore = view.api.snapshotProject('Current project');
+
+  const chooseFile = async (
+    name: string,
+    contents: string,
+    size = contents.length,
+    unreadable = false
+  ) => {
+    const file = new view.dom.window.File([contents], name, {
+      type: 'application/json',
+    });
+    Object.defineProperty(file, 'size', { value: size });
+    Object.defineProperty(file, 'text', {
+      value: async () => {
+        if (unreadable) throw new Error('Read failed');
+        return contents;
+      },
+    });
+    const picker =
+      document.querySelector<HTMLInputElement>('input[type="file"]');
+    assert.ok(picker);
+    Object.defineProperty(picker, 'files', {
+      configurable: true,
+      value: [file],
+    });
+    await act(async () => {
+      picker.dispatchEvent(
+        new view.dom.window.Event('change', { bubbles: true })
+      );
+      await Promise.resolve();
+    });
+  };
+
+  await chooseFile('wrong.json', JSON.stringify(original));
+  assert.ok(
+    document.querySelector('[role="alert"]')?.textContent?.includes('.wcp.json')
+  );
+  await chooseFile('invalid.wcp.json', '{invalid');
+  assert.ok(
+    document
+      .querySelector('[role="alert"]')
+      ?.textContent?.includes('not valid JSON')
+  );
+  await chooseFile(
+    'large.wcp.json',
+    '',
+    projectImport.MAX_PROJECT_FILE_SIZE + 1
+  );
+  assert.ok(
+    document
+      .querySelector('[role="alert"]')
+      ?.textContent?.includes('no larger than 5 MB')
+  );
+  await chooseFile('unreadable.wcp.json', '', 0, true);
+  assert.ok(
+    document
+      .querySelector('[role="alert"]')
+      ?.textContent?.includes('could not be read')
+  );
+  assert.equal(view.api.activeLocalSave?.id, activeSave.id);
+  assert.equal(view.api.activeLocalSave?.name, activeSave.name);
+  assert.deepEqual(view.api.snapshotProject('Current project'), activeBefore);
+  assert.equal(
+    view.dom.window.localStorage.getItem(
+      project.storageKeyForProject(original.name)
+    ),
+    savedBefore
+  );
+});
+
+test('failed JSON restore keeps the current local-save identity', async (t) => {
+  const fixture = readFileSync(
+    new URL('./fixtures/project-export-v2.wcp.json', import.meta.url),
+    'utf8'
+  );
+  const view = await mount(t, { render: renderApp });
+  const hub = fakeHub();
+  await act(() => view.api.addHub());
+  await create(view, 'distance', 'B');
+  const activeSave = {
+    id: 'web-control-plus:project:current',
+    name: 'Current',
+  };
+  await act(() => view.api.setActiveLocalSave(activeSave));
+  hub.unsubscribe = async () => {
+    throw new Error('unsubscribe failed');
+  };
+
+  await click(button('Open project'));
+  const file = new view.dom.window.File([fixture], 'fixture.wcp.json', {
+    type: 'application/json',
+  });
+  Object.defineProperty(file, 'text', { value: async () => fixture });
+  const picker = document.querySelector<HTMLInputElement>('input[type="file"]');
+  assert.ok(picker);
+  Object.defineProperty(picker, 'files', {
+    configurable: true,
+    value: [file],
+  });
+  await act(async () => {
+    picker.dispatchEvent(
+      new view.dom.window.Event('change', { bubbles: true })
+    );
+    await Promise.resolve();
+  });
+  await click(button('Import and save'));
+  assert.equal(view.api.activeLocalSave?.id, activeSave.id);
+  assert.equal(view.api.activeLocalSave?.name, activeSave.name);
+  assert.ok(
+    document
+      .querySelector('[aria-labelledby="project-confirm-title"] [role="alert"]')
+      ?.textContent?.includes('unsubscribe failed')
+  );
+  assert.equal(view.dom.window.localStorage.length, 0);
 });
 
 test('offline restore loads all hubs and devices without hardware side effects', async (t) => {

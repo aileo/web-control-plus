@@ -169,7 +169,10 @@ type ControlContextValue = {
   replaceOfflineHub: (oldUuid: string, newUuid: string) => Promise<void>;
   stopAll: () => Promise<void>;
   snapshotProject: (name: string) => ProjectSnapshot;
-  restoreProject: (snapshot: ProjectSnapshot) => Promise<void>;
+  restoreProject: (
+    snapshot: ProjectSnapshot,
+    beforePublish?: () => void
+  ) => Promise<void>;
   markProjectSaved: (snapshot: ProjectSnapshot) => void;
   activeLocalSave: LocalProjectIdentity | null;
   setActiveLocalSave: (identity: LocalProjectIdentity | null) => void;
@@ -1287,7 +1290,10 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         }
       },
       stopAll,
-      restoreProject: async (input: ProjectSnapshot) => {
+      restoreProject: async (
+        input: ProjectSnapshot,
+        beforePublish?: () => void
+      ) => {
         const snapshot = validateProject(input);
         if (projectChange.current || removingBoard.current) {
           throw new Error('Another board change is in progress');
@@ -1338,11 +1344,15 @@ export function ControlsProvider({ children }: PropsWithChildren) {
             );
           }
 
-          restoreProjectHubs(snapshot.hubs);
-          restoreProjectDevices(snapshot.devices);
+          const publishHubs = restoreProjectHubs(snapshot.hubs);
+          const publishDevices = restoreProjectDevices(snapshot.devices);
           const nextControls = new Map(
             snapshot.controls.map((control) => [control.id, control])
           );
+          const baseline = projectContentKey(snapshot);
+          beforePublish?.();
+          publishHubs();
+          publishDevices();
           records.current = nextControls;
           setControls(nextControls);
           boardsRef.current = snapshot.boards;
@@ -1354,8 +1364,9 @@ export function ControlsProvider({ children }: PropsWithChildren) {
           setSensorStates(new Map());
           setPendingSpeeds(new Map());
           setError(null);
-          setProjectBaseline(projectContentKey(snapshot));
+          setProjectBaseline(baseline);
         } catch (cause) {
+          reconcile(life.current);
           report(cause);
           throw cause;
         } finally {

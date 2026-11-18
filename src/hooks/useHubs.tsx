@@ -35,7 +35,7 @@ type HubContextValue = {
   hubs: Map<string, HubInfo>;
   error: unknown;
   connecting: boolean;
-  restoreProjectHubs: (projectHubs: readonly ProjectHub[]) => void;
+  restoreProjectHubs: (projectHubs: readonly ProjectHub[]) => () => void;
   addHub: () => Promise<RawHub>;
   replaceOfflineHub: (oldUuid: string, newUuid: string) => void;
   refreshHub: (uuid: string) => Promise<void>;
@@ -363,7 +363,7 @@ export function HubsProvider({ children }: PropsWithChildren) {
           restored.set(uuid, hubInfo(session.hub, session));
         }
       });
-      setHubs(restored);
+      return () => setHubs(restored);
     };
 
     return {

@@ -70,6 +70,7 @@ type SourceModules = {
   'core/control-layout': typeof import('../../src/core/control-layout.ts');
   'core/project': typeof import('../../src/core/project.ts');
   'core/project-export': typeof import('../../src/core/project-export.ts');
+  'core/project-import': typeof import('../../src/core/project-import.ts');
   'utils/deviceTypes': typeof import('../../src/utils/deviceTypes.ts');
   'theme/colors': typeof import('../../src/theme/colors.ts');
 };
@@ -225,6 +226,7 @@ export const controls = loadSource('hooks/useControls');
 export const navigation = loadSource('hooks/useNavigation');
 export const toast = loadSource('hooks/useToast');
 export const project = loadSource('core/project');
+export const projectImport = loadSource('core/project-import');
 
 export function fakeDevice(
   portName: string,
