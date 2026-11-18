@@ -3,51 +3,79 @@ env:
   es6: true
 extends:
   - airbnb
-globals:
-  Atomics: readonly
-  SharedArrayBuffer: readonly
+  - plugin:@typescript-eslint/recommended
+  - plugin:prettier/recommended
 parser: '@typescript-eslint/parser'
 parserOptions:
   ecmaFeatures:
     jsx: true
-  ecmaVersion: 2020
+  ecmaVersion: latest
   sourceType: module
 plugins:
   - react
   - '@typescript-eslint'
+settings:
+  import/resolver:
+    typescript:
+      project: ./tsconfig.json
+    node:
+      extensions: [.ts, .tsx, .js]
+overrides:
+  - files: ["tests/**/*.ts", "vite.config.ts"]
+    env:
+      node: true
+    rules:
+      import/no-extraneous-dependencies: off
+  - files: ["tests/**/*.ts"]
+    rules:
+      max-len:
+        - error
+        - code: 80
+          ignoreStrings: true
+          ignoreTemplateLiterals: true
+      no-await-in-loop: off
+      no-restricted-syntax:
+        - error
+        - ForInStatement
+        - LabeledStatement
+        - WithStatement
 rules:
-  linebreak-style: off
+  no-undef: off
+  no-unused-vars: off
+  no-shadow: off
+  no-use-before-define: off
+  '@typescript-eslint/no-use-before-define':
+    - error
+    - functions: false
+      ignoreTypeReferences: true
+  no-void:
+    - error
+    - allowAsStatement: true
+  '@typescript-eslint/no-shadow': error
+  '@typescript-eslint/no-unused-vars':
+    - error
+    - argsIgnorePattern: ^_
+      varsIgnorePattern: ^_
+  '@typescript-eslint/no-explicit-any': error
+  import/extensions: off
+  react/jsx-filename-extension:
+    - error
+    - extensions: [.tsx]
+  react/require-default-props: off
   react/function-component-definition:
     - error
     - namedComponents: [function-declaration, function-expression, arrow-function]
       unnamedComponents: [function-expression, arrow-function]
-  react/no-unused-class-component-methods: off
-  object-curly-newline: off
-  arrow-parens:
-    - error
-    - as-needed
-    - requireForBlockBody: false
   no-param-reassign:
     - error
     - props: false
   no-underscore-dangle: off
-  comma-dangle:
-    - error
-    - arrays: always-multiline
-      objects: always-multiline
-      imports: always-multiline
-      exports: always-multiline
-      functions: never
   react/prop-types: off
   react/jsx-props-no-spreading:
     - error
     - html: enforce
       custom: ignore
       explicitSpread: ignore
-  react/jsx-curly-spacing:
-    - error
-    - when: always
-  react/forbid-prop-types: off
   max-len:
     - error
     - code: 80
@@ -56,8 +84,3 @@ rules:
     - error
     - assert: either
   no-mixed-operators: off
-  no-extra-parens:
-    - error
-    - all
-    - ignoreJSX: multi-line
-      enforceForArrowConditionals: false
