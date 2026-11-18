@@ -149,8 +149,8 @@ function Main() {
                     flexShrink: 0,
                     alignItems: 'center',
                     bgcolor: background,
-                    borderTop: '3px solid',
-                    borderColor:
+                    borderBottom: '5px solid',
+                    borderBottomColor:
                       tabColor || (isSelected ? 'text.primary' : 'transparent'),
                   }}
                 >
@@ -169,7 +169,7 @@ function Main() {
                       px: 2,
                       textTransform: 'uppercase',
                       fontSize: '0.875rem',
-                      fontWeight: 500,
+                      fontWeight: isSelected ? 700 : 500,
                       '&:focus-visible': {
                         outline: '2px solid',
                         outlineOffset: '-3px',
