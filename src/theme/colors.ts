@@ -5,6 +5,7 @@ const gray = '#e8e9eb';
 const green = '#04a777';
 const blue = '#2b59c3';
 const red = '#e3000b';
+const purple = '#773eb5';
 
 const texts = ['#000000', '#ffffff'] as const;
 
@@ -28,6 +29,13 @@ function colorBuilder(hex: string): { main: string; contrastText: string } {
     contrastText: getContrastText(hex),
   };
 }
+
+export const boardTabColors = {
+  red: colorBuilder(red),
+  blue: colorBuilder(blue),
+  green: colorBuilder(green),
+  purple: colorBuilder(purple),
+};
 
 export default {
   primary: colorBuilder(yellow),

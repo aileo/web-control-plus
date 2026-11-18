@@ -16,7 +16,14 @@ import {
 } from './helpers/controls.ts';
 
 const Main = loadSource('components/pages/Main').default;
-const render = () => React.createElement(Main);
+const Footer = loadSource('components/Footer').default;
+const render = () =>
+  React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(Main),
+    React.createElement(Footer)
+  );
 
 test('boards retain independent layouts and shortcuts while sharing devices and motor state', async (t) => {
   const view = await mount(t, { render });
@@ -123,10 +130,10 @@ test('tab actions rename and configure colors while preserving tab keyboard navi
   await click(button('Save'));
   assert.equal(view.api.boards[0].name, 'Trains');
   await click(button('Settings for Trains'));
-  const blue = present(
-    document.querySelector<HTMLInputElement>('input[value="blue"]')
-  );
+  const blue = button('Blue');
+  await act(() => blue.focus());
   await click(blue);
+  assert.equal(blue.getAttribute('aria-pressed'), 'true');
   const settingsName = present(
     document.querySelector<HTMLInputElement>('[role="dialog"] input')
   );
@@ -147,11 +154,37 @@ test('tab actions rename and configure colors while preserving tab keyboard navi
   assert.equal(document.activeElement?.id, `tab-${view.api.boards[0].id}`);
   assert.ok(button('Rename Trains'));
   await click(button('Settings for Trains'));
-  await click(
-    present(document.querySelector<HTMLInputElement>('input[value=""]'))
-  );
+  await click(button('Default'));
   await click(button('Save'));
   assert.equal(view.api.boards[0].color, undefined);
+});
+
+test('the footer stop immediately stops motors running on different tabs', async (t) => {
+  const view = await mount(t, { render });
+  const hub = fakeHub();
+  hub.devices.D = fakeDevice('D');
+  await act(() => view.api.addHub());
+  const first = await create(view, 'slider', 'A');
+  await act(() => view.api.speed(first.id, 50));
+  await click(button('Add board'));
+  const second = await create(view, 'slider', 'D');
+  await act(() => view.api.speed(second.id, 30));
+  const stop = button(
+    'Stop all motors',
+    present(document.querySelector('footer'))
+  );
+  await act(() => stop.focus());
+  await click(stop);
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+  assert.deepEqual(
+    hub.devices.A.speeds.map(([speed]) => speed),
+    [50, 0]
+  );
+  assert.deepEqual(
+    hub.devices.D.speeds.map(([speed]) => speed),
+    [30, 0]
+  );
+  assert.equal(view.api.activeBoards.size, 0);
 });
 
 test('closing settings returns focus and deleting a board focuses the surviving tab', async (t) => {

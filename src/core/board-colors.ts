@@ -1,8 +1,8 @@
 export const BOARD_COLORS = {
-  red: { label: 'Red', background: '#ffd9dc' },
-  blue: { label: 'Blue', background: '#d8eaff' },
-  green: { label: 'Green', background: '#d8f3df' },
-  purple: { label: 'Purple', background: '#eadcff' },
+  red: { label: 'Red' },
+  blue: { label: 'Blue' },
+  green: { label: 'Green' },
+  purple: { label: 'Purple' },
 } as const;
 
 export type BoardColor = keyof typeof BOARD_COLORS;

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AppBar,
   Box,
@@ -10,11 +10,9 @@ import {
   DialogContentText,
   DialogTitle,
   FormControl,
-  FormControlLabel,
   FormLabel,
   IconButton,
-  Radio,
-  RadioGroup,
+  Stack,
   TextField,
   Toolbar,
   Tooltip,
@@ -22,25 +20,27 @@ import {
 import Edit from '@mui/icons-material/Edit';
 import Settings from '@mui/icons-material/Settings';
 import GraphicEq from '@mui/icons-material/GraphicEq';
-import {
-  BOARD_COLORS,
-  type BoardColor,
-  isBoardColor,
-} from '../../core/board-colors';
+import Add from '@mui/icons-material/Add';
+import Check from '@mui/icons-material/Check';
+import { BOARD_COLORS, type BoardColor } from '../../core/board-colors';
+import { boardTabColors } from '../../theme/colors';
 import {
   useActiveBoards,
   useAddBoard,
   useBoards,
-  usePostMessage,
   useRemoveBoard,
   useRenameBoard,
   useSelectBoard,
   useSelectedBoardId,
-  useStopAll,
   useUpdateBoardSettings,
 } from '../../hooks';
 import errorMessage from '../../utils/errorMessage';
 import Grid from '../modules/grid/Grid';
+
+const colorOptions = [
+  undefined,
+  ...(Object.keys(BOARD_COLORS) as BoardColor[]),
+];
 
 function Main() {
   const boards = useBoards();
@@ -51,8 +51,6 @@ function Main() {
   const rename = useRenameBoard();
   const updateSettings = useUpdateBoardSettings();
   const remove = useRemoveBoard();
-  const stop = useStopAll();
-  const postMessage = usePostMessage();
   const board = boards.find((item) => item.id === selected)!;
   const [dialog, setDialog] = useState<'rename' | 'settings' | 'remove' | null>(
     null
@@ -62,6 +60,13 @@ function Main() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const returnFocus = useRef<HTMLElement | null>(null);
+  const selectedTab = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    selectedTab.current?.scrollIntoView?.({
+      block: 'nearest',
+      inline: 'nearest',
+    });
+  }, [selected]);
   const openDialog = (kind: 'rename' | 'settings', opener: HTMLElement) => {
     returnFocus.current = opener;
     setName(board.name);
@@ -107,16 +112,22 @@ function Main() {
   };
   return (
     <Box
-      sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+      sx={{
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
     >
-      <AppBar position="static" color="primary">
-        <Toolbar sx={{ minHeight: 48, gap: 1, flexWrap: 'wrap' }}>
+      <AppBar position="static" color="primary" elevation={0}>
+        <Toolbar disableGutters variant="dense">
           <Box
             role="tablist"
             aria-label="Boards"
             sx={{
               display: 'flex',
-              flex: '1 1 200px',
+              flex: '0 1 auto',
               minWidth: 0,
               overflowX: 'auto',
               alignItems: 'stretch',
@@ -124,21 +135,23 @@ function Main() {
           >
             {boards.map((item, index) => {
               const isSelected = item.id === selected;
-              let background = isSelected ? 'background.paper' : 'transparent';
-              if (item.color) background = BOARD_COLORS[item.color].background;
+              const background = isSelected
+                ? 'background.paper'
+                : 'transparent';
+              const tabColor = item.color && boardTabColors[item.color].main;
               return (
                 <Box
                   key={item.id}
+                  ref={isSelected ? selectedTab : undefined}
                   role="presentation"
                   sx={{
                     display: 'flex',
                     flexShrink: 0,
                     alignItems: 'center',
                     bgcolor: background,
-                    borderBottom: isSelected
-                      ? '3px solid'
-                      : '3px solid transparent',
-                    borderColor: isSelected ? 'text.primary' : 'transparent',
+                    borderTop: '3px solid',
+                    borderColor:
+                      tabColor || (isSelected ? 'text.primary' : 'transparent'),
                   }}
                 >
                   <ButtonBase
@@ -171,7 +184,18 @@ function Main() {
                         alignItems: 'center',
                       }}
                     >
-                      {item.name}
+                      <Box
+                        component="span"
+                        sx={{
+                          maxWidth: { xs: '26vw', sm: 220 },
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={item.name}
+                      >
+                        {item.name}
+                      </Box>
                       {active.has(item.id) && (
                         <GraphicEq
                           role="img"
@@ -212,19 +236,16 @@ function Main() {
               );
             })}
           </Box>
-          <Button color="inherit" onClick={add}>
-            Add board
-          </Button>
-          <Button
-            color="inherit"
-            onClick={() => {
-              void stop().catch((cause) =>
-                postMessage({ level: 'error', text: errorMessage(cause) })
-              );
-            }}
-          >
-            Stop all motors
-          </Button>
+          <Tooltip title="Add board">
+            <IconButton
+              aria-label="Add board"
+              color="inherit"
+              onClick={add}
+              sx={{ flexShrink: 0 }}
+            >
+              <Add />
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
       <Box
@@ -233,7 +254,7 @@ function Main() {
         aria-labelledby={`tab-${selected}`}
         sx={{ flex: 1, minHeight: 0, display: 'flex' }}
       >
-        <Grid key={selected} />
+        <Grid key={selected} flushTop />
       </Box>
       <Dialog
         open={dialog !== null}
@@ -272,53 +293,46 @@ function Main() {
               {dialog === 'settings' && (
                 <FormControl sx={{ mt: 2 }}>
                   <FormLabel id="board-color-label">Tab color</FormLabel>
-                  <RadioGroup
-                    row
+                  <Stack
+                    role="group"
                     aria-labelledby="board-color-label"
-                    value={color ?? ''}
-                    onChange={(event) => {
-                      const { value } = event.target;
-                      if (value === '') setColor(undefined);
-                      else if (isBoardColor(value)) setColor(value);
-                    }}
+                    direction="row"
+                    useFlexGap
+                    sx={{ flexWrap: 'wrap', gap: 1, mt: 1 }}
                   >
-                    <FormControlLabel
-                      value=""
-                      control={<Radio />}
-                      label="Default"
-                    />
-                    {(Object.keys(BOARD_COLORS) as BoardColor[]).map((key) => (
-                      <FormControlLabel
-                        key={key}
-                        value={key}
-                        control={<Radio />}
-                        label={
-                          <Box
-                            component="span"
-                            sx={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 0.5,
-                            }}
-                          >
-                            <Box
-                              component="span"
-                              aria-hidden="true"
-                              sx={{
-                                width: 16,
-                                height: 16,
-                                bgcolor: BOARD_COLORS[key].background,
-                                border: '1px solid',
-                                borderColor: 'text.secondary',
-                                borderRadius: '50%',
-                              }}
-                            />
-                            {BOARD_COLORS[key].label}
-                          </Box>
-                        }
-                      />
-                    ))}
-                  </RadioGroup>
+                    {colorOptions.map((key) => {
+                      const swatch = key ? boardTabColors[key] : undefined;
+                      const label = key ? BOARD_COLORS[key].label : 'Default';
+                      return (
+                        <Button
+                          key={label}
+                          variant="contained"
+                          disableElevation
+                          aria-pressed={key === color}
+                          onClick={() => setColor(key)}
+                          endIcon={key === color ? <Check /> : undefined}
+                          sx={{
+                            bgcolor: swatch?.main ?? 'secondary.main',
+                            color:
+                              swatch?.contrastText ?? 'secondary.contrastText',
+                            borderRadius: 999,
+                            textTransform: 'none',
+                            '&:hover': {
+                              bgcolor: swatch?.main ?? 'secondary.main',
+                              boxShadow: 2,
+                            },
+                            '&:focus-visible': {
+                              outline: '2px solid',
+                              outlineColor: 'text.primary',
+                              outlineOffset: 2,
+                            },
+                          }}
+                        >
+                          {label}
+                        </Button>
+                      );
+                    })}
+                  </Stack>
                 </FormControl>
               )}
             </>

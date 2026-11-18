@@ -19,11 +19,13 @@ function GridLayout({
   onPointerMove,
   onPointerUp,
   onPointerCancel,
+  alignTop = false,
 }: React.PropsWithChildren<{
   boardRef: BoardRef;
   onPointerMove: React.PointerEventHandler<HTMLDivElement>;
   onPointerUp: React.PointerEventHandler<HTMLDivElement>;
   onPointerCancel: React.PointerEventHandler<HTMLDivElement>;
+  alignTop?: boolean;
 }>) {
   const viewport = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0);
@@ -52,7 +54,7 @@ function GridLayout({
         minHeight: 0,
         minWidth: 0,
         display: 'flex',
-        alignItems: 'center',
+        alignItems: alignTop ? 'flex-start' : 'center',
         justifyContent: 'center',
       }}
     >

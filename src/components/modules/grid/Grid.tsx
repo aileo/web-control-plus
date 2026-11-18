@@ -33,7 +33,7 @@ type Gesture = {
 };
 const rectangleKeys = ['x', 'y', 'w', 'h'] as const;
 
-function Grid() {
+function Grid({ flushTop = false }: { flushTop?: boolean }) {
   const controls = useControls();
   const occupancy = useBoardOccupancy();
   const instructions = useBoardInstructions();
@@ -171,7 +171,9 @@ function Grid() {
         flex: 1,
         minWidth: 0,
         minHeight: 0,
-        p: { xs: 1, sm: 2 },
+        px: { xs: 1, sm: 2 },
+        pb: { xs: 1, sm: 2 },
+        pt: flushTop ? 0 : { xs: 1, sm: 2 },
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -200,6 +202,7 @@ function Grid() {
       )}
       <GridLayout
         boardRef={board}
+        alignTop={flushTop}
         onPointerMove={move}
         onPointerUp={finish}
         onPointerCancel={cancel}

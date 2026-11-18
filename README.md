@@ -39,7 +39,8 @@ Use the board tabs to add or switch boards. The selected tab's pencil renames
 it, and its settings let you rename, choose a tab color, or remove it. Each
 board has its own layout and shortcuts, while connected hubs are shared. Removing a
 populated board requires confirmation and stops its motor controls. The
-**Stop all motors** button is available on every board.
+red **Stop all motors** button is always available in the footer and acts
+immediately, without confirmation.
 
 Switching boards releases momentary inputs; fixed-speed motors keep running.
 The motor icon on a tab indicates a motor was commanded to run, not verified
