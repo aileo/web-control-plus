@@ -82,8 +82,6 @@ test('boards retain independent layouts and shortcuts while sharing devices and 
   );
   await key(document.body, 'keyup', 'q', { code: 'KeyQ' });
   assert.equal(view.api.controls.get(first.id)?.id, first.id);
-  await act(() => view.api.renameBoard(firstBoard, 'Trains'));
-  assert.equal(view.api.boards[0].name, 'Trains');
   await act(() => view.api.stopAll());
   assert.deepEqual(
     hub.devices.A.speeds.map((item) => item[0]),
@@ -117,11 +115,11 @@ test('tab activity clears on disconnect and populated removal asks for confirmat
   );
 });
 
-test('tab actions rename and configure colors while preserving tab keyboard navigation', async (t) => {
+test('tab settings rename and configure colors while preserving tab keyboard navigation', async (t) => {
   const view = await mount(t, { render });
-  const edit = button('Rename Board 1');
-  await act(() => edit.focus());
-  await click(edit);
+  const settings = button('Settings for Board 1');
+  await act(() => settings.focus());
+  await click(settings);
   const nameInput = present(
     document.querySelector<HTMLInputElement>('[role="dialog"] input')
   );
@@ -146,13 +144,23 @@ test('tab actions rename and configure colors while preserving tab keyboard navi
   assert.equal(view.api.boards[0].color, 'blue');
   assert.equal(document.querySelectorAll('[role="tab"] button').length, 0);
   await click(button('Add board'));
+  const gears = () => [
+    ...document.querySelectorAll('[role="tablist"] button:not([role="tab"])'),
+  ];
+  assert.deepEqual(
+    gears().map((gear) => gear.getAttribute('aria-label')),
+    ['Settings for Board 2']
+  );
   const secondId = view.api.selectedBoardId;
   const second = present(document.getElementById(`tab-${secondId}`));
   await act(() => second.focus());
   await key(second, 'keydown', 'ArrowLeft');
   assert.equal(view.api.selectedBoardId, view.api.boards[0].id);
   assert.equal(document.activeElement?.id, `tab-${view.api.boards[0].id}`);
-  assert.ok(button('Rename Trains'));
+  assert.deepEqual(
+    gears().map((gear) => gear.getAttribute('aria-label')),
+    ['Settings for Trains']
+  );
   await click(button('Settings for Trains'));
   await click(button('Default'));
   await click(button('Save'));

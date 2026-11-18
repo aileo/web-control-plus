@@ -372,7 +372,6 @@ export async function mount(
       activeBoards: controls.useActiveBoards(),
       addBoard: controls.useAddBoard(),
       selectBoard: controls.useSelectBoard(),
-      renameBoard: controls.useRenameBoard(),
       removeBoard: controls.useRemoveBoard(),
       stopAll: controls.useStopAll(),
       error: controls.useControlsError(),

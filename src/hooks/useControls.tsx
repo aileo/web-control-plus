@@ -124,7 +124,6 @@ type ControlContextValue = {
   activeBoards: Set<string>;
   addBoard: () => void;
   selectBoard: (id: string) => void;
-  renameBoard: (id: string, name: string) => void;
   updateBoardSettings: (id: string, name: string, color?: BoardColor) => void;
   removeBoard: (id: string) => Promise<void>;
   stopAll: () => Promise<void>;
@@ -1063,18 +1062,6 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         selectedRef.current = id;
         setSelectedBoardId(id);
       },
-      renameBoard: (id: string, name: string) => {
-        const trimmed = name.trim();
-        if (!trimmed || trimmed.length > 80)
-          throw new Error('Enter a board name between 1 and 80 characters');
-        if (!boardsRef.current.some((board) => board.id === id))
-          throw new Error('Board no longer exists');
-        updateBoards(
-          boardsRef.current.map((board) =>
-            board.id === id ? { ...board, name: trimmed } : board
-          )
-        );
-      },
       updateBoardSettings: (id: string, name: string, color?: BoardColor) => {
         const trimmed = name.trim();
         if (!trimmed || trimmed.length > 80)
@@ -1210,7 +1197,6 @@ export const useSelectedBoardId = hookFactory('selectedBoardId');
 export const useActiveBoards = hookFactory('activeBoards');
 export const useAddBoard = hookFactory('addBoard');
 export const useSelectBoard = hookFactory('selectBoard');
-export const useRenameBoard = hookFactory('renameBoard');
 export const useUpdateBoardSettings = hookFactory('updateBoardSettings');
 export const useRemoveBoard = hookFactory('removeBoard');
 export const useStopAll = hookFactory('stopAll');

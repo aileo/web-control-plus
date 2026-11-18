@@ -17,7 +17,6 @@ import {
   Toolbar,
   Tooltip,
 } from '@mui/material';
-import Edit from '@mui/icons-material/Edit';
 import Settings from '@mui/icons-material/Settings';
 import GraphicEq from '@mui/icons-material/GraphicEq';
 import Add from '@mui/icons-material/Add';
@@ -29,7 +28,6 @@ import {
   useAddBoard,
   useBoards,
   useRemoveBoard,
-  useRenameBoard,
   useSelectBoard,
   useSelectedBoardId,
   useUpdateBoardSettings,
@@ -48,13 +46,10 @@ function Main() {
   const active = useActiveBoards();
   const add = useAddBoard();
   const select = useSelectBoard();
-  const rename = useRenameBoard();
   const updateSettings = useUpdateBoardSettings();
   const remove = useRemoveBoard();
   const board = boards.find((item) => item.id === selected)!;
-  const [dialog, setDialog] = useState<'rename' | 'settings' | 'remove' | null>(
-    null
-  );
+  const [dialog, setDialog] = useState<'settings' | 'remove' | null>(null);
   const [name, setName] = useState('');
   const [color, setColor] = useState<BoardColor | undefined>();
   const [busy, setBusy] = useState(false);
@@ -67,12 +62,12 @@ function Main() {
       inline: 'nearest',
     });
   }, [selected]);
-  const openDialog = (kind: 'rename' | 'settings', opener: HTMLElement) => {
+  const openSettings = (opener: HTMLElement) => {
     returnFocus.current = opener;
     setName(board.name);
     setColor(board.color);
     setError('');
-    setDialog(kind);
+    setDialog('settings');
   };
   const removeSelected = async () => {
     setBusy(true);
@@ -103,8 +98,7 @@ function Main() {
   };
   const save = () => {
     try {
-      if (dialog === 'rename') rename(selected, name);
-      else updateSettings(selected, name, color);
+      updateSettings(selected, name, color);
       setDialog(null);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -187,14 +181,29 @@ function Main() {
                       <Box
                         component="span"
                         sx={{
+                          display: 'grid',
                           maxWidth: { xs: '26vw', sm: 220 },
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
+                          '& > span': {
+                            gridArea: '1 / 1',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          },
                         }}
                         title={item.name}
                       >
-                        {item.name}
+                        {/* Measure both weights to keep tab width stable. */}
+                        <Box
+                          component="span"
+                          aria-hidden="true"
+                          sx={{
+                            visibility: 'hidden',
+                            fontWeight: isSelected ? 500 : 700,
+                          }}
+                        >
+                          {item.name}
+                        </Box>
+                        <span>{item.name}</span>
                       </Box>
                       {active.has(item.id) && (
                         <GraphicEq
@@ -206,32 +215,20 @@ function Main() {
                       )}
                     </Box>
                   </ButtonBase>
-                  {isSelected && (
-                    <>
-                      <Tooltip title="Rename board">
-                        <IconButton
-                          size="small"
-                          aria-label={`Rename ${item.name}`}
-                          onClick={(event) =>
-                            openDialog('rename', event.currentTarget)
-                          }
-                        >
-                          <Edit fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                  <Box sx={{ width: 30, flexShrink: 0 }}>
+                    {isSelected && (
                       <Tooltip title="Board settings">
                         <IconButton
                           size="small"
+                          sx={{ width: '100%' }}
                           aria-label={`Settings for ${item.name}`}
-                          onClick={(event) =>
-                            openDialog('settings', event.currentTarget)
-                          }
+                          onClick={(event) => openSettings(event.currentTarget)}
                         >
                           <Settings fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                    </>
-                  )}
+                    )}
+                  </Box>
                 </Box>
               );
             })}
@@ -268,7 +265,6 @@ function Main() {
         aria-labelledby="board-dialog-title"
       >
         <DialogTitle id="board-dialog-title">
-          {dialog === 'rename' && 'Rename board'}
           {dialog === 'settings' && 'Board settings'}
           {dialog === 'remove' && 'Remove board?'}
         </DialogTitle>
