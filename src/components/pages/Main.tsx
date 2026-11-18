@@ -278,6 +278,12 @@ function Main() {
             <>
               <TextField
                 autoFocus
+                color="info"
+                sx={{
+                  '& .MuiInputLabel-root.Mui-focused:not(.Mui-error)': {
+                    color: 'text.primary',
+                  },
+                }}
                 label="Board name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
@@ -348,11 +354,16 @@ function Main() {
               Remove board
             </Button>
           )}
-          <Button disabled={busy} onClick={() => setDialog(null)}>
+          <Button
+            color="inherit"
+            disabled={busy}
+            onClick={() => setDialog(null)}
+          >
             Cancel
           </Button>
           {dialog === 'remove' ? (
             <Button
+              color="error"
               disabled={busy}
               onClick={() => {
                 void removeSelected();
@@ -361,7 +372,9 @@ function Main() {
               Remove
             </Button>
           ) : (
-            <Button onClick={save}>Save</Button>
+            <Button variant="contained" onClick={save}>
+              Save
+            </Button>
           )}
         </DialogActions>
       </Dialog>
