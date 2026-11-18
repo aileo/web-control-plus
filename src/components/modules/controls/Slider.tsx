@@ -62,9 +62,11 @@ function Slider({ control }: { control: ControlOf<'slider'> }) {
   }, []);
   useEffect(() => {
     window.addEventListener('blur', stop);
+    window.addEventListener('board-input-release', stop);
     return () => {
       held.current = null;
       window.removeEventListener('blur', stop);
+      window.removeEventListener('board-input-release', stop);
     };
   }, [stop, connectionId, available, control.uuid, control.port]);
   // Capture the release policy and connection at the start of this input.

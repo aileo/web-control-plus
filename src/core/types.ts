@@ -83,6 +83,12 @@ export type ControlOf<K extends ControlType> = ControlBase<
 
 export type Control = { [K in ControlType]: ControlOf<K> }[ControlType];
 
+export type Board = {
+  id: string;
+  name: string;
+  controlIds: string[];
+};
+
 export type DeviceTypeInfo = {
   num: number;
   text: string;

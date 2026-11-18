@@ -188,10 +188,13 @@ function Arrows({ control }: { control: ControlOf<'arrows'> }) {
   );
   useEffect(() => {
     const leave = () => release(true);
+    const switchBoard = () => release();
     window.addEventListener('blur', leave);
+    window.addEventListener('board-input-release', switchBoard);
     return () => {
       held.current = null;
       window.removeEventListener('blur', leave);
+      window.removeEventListener('board-input-release', switchBoard);
     };
   }, [release, connectionId, available, control.uuid, control.port]);
   const press = (

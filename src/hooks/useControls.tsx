@@ -25,6 +25,7 @@ import {
 } from '../core/control-layout';
 import type {
   BoardOccupant,
+  Board,
   Control,
   ControlType,
   DeviceInfo,
@@ -116,6 +117,15 @@ type ControlLifecycle = {
 };
 type ControlContextValue = {
   controls: Map<string, Control>;
+  allControls: Map<string, Control>;
+  boards: Board[];
+  selectedBoardId: string;
+  activeBoards: Set<string>;
+  addBoard: () => void;
+  selectBoard: (id: string) => void;
+  renameBoard: (id: string, name: string) => void;
+  removeBoard: (id: string) => Promise<void>;
+  stopAll: () => Promise<void>;
   occupancy: ReadonlyMap<string, BoardOccupant>;
   instructions: boolean;
   dismissInstructions: () => void;
@@ -213,6 +223,14 @@ export function ControlsProvider({ children }: PropsWithChildren) {
   const [controls, setControls] = useState<Map<string, Control>>(
     () => new Map()
   );
+  const [boards, setBoards] = useState<Board[]>([
+    { id: 'board-1', name: 'Board 1', controlIds: [] },
+  ]);
+  const [selectedBoardId, setSelectedBoardId] = useState('board-1');
+  const boardsRef = useRef(boards);
+  const selectedRef = useRef(selectedBoardId);
+  const boardSerial = useRef(1);
+  const removingBoard = useRef(false);
   const helpPreference = useHelpPreference();
   const [instructions, setInstructions] = useState(
     () => !helpPreference.hidden
@@ -248,14 +266,38 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     latest.current.instructions = false;
     setInstructions(false);
   }, []);
+  const selectedControls = useMemo(() => {
+    const ids = new Set(
+      boards.find((board) => board.id === selectedBoardId)?.controlIds
+    );
+    return new Map([...controls].filter(([id]) => ids.has(id)));
+  }, [boards, controls, selectedBoardId]);
   const occupancy = useMemo(
-    () => boardOccupancy(controls, instructions),
-    [controls, instructions]
+    () => boardOccupancy(selectedControls, instructions),
+    [selectedControls, instructions]
   );
+  const controlsForBoard = useCallback((id: string) => {
+    const ids = new Set(
+      boardsRef.current.find((board) => board.id === id)?.controlIds
+    );
+    return new Map(
+      [...records.current].filter(([controlId]) => ids.has(controlId))
+    );
+  }, []);
+  const updateBoards = useCallback((next: Board[]) => {
+    boardsRef.current = next;
+    setBoards(next);
+  }, []);
 
   const commit = useCallback((next: Map<string, Control>) => {
     records.current = next;
     setControls(next);
+    const updated = boardsRef.current.map((board) => ({
+      ...board,
+      controlIds: board.controlIds.filter((id) => next.has(id)),
+    }));
+    boardsRef.current = updated;
+    setBoards(updated);
     setIssues((previous) => {
       if ([...previous.keys()].every((id) => next.has(id))) return previous;
       return new Map([...previous].filter(([id]) => next.has(id)));
@@ -593,7 +635,14 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         throw new Error('Unsupported control size');
       if (
         !canPlace(
-          boardOccupancy(records.current, latest.current.instructions),
+          boardOccupancy(
+            controlsForBoard(
+              boardsRef.current.find((board) =>
+                board.controlIds.includes(control.id)
+              )?.id ?? selectedRef.current
+            ),
+            latest.current.instructions
+          ),
           control,
           excludeId
         )
@@ -609,7 +658,10 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         string,
         { binding: ShortcutEntry; title: string }
       >();
-      const others = [...records.current.values()].filter(
+      const boardId =
+        boardsRef.current.find((board) => board.controlIds.includes(control.id))
+          ?.id ?? selectedRef.current;
+      const others = [...controlsForBoard(boardId).values()].filter(
         (other) =>
           other.id !== excludeId &&
           other.uuid === control.uuid &&
@@ -669,6 +721,7 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     return {
       add: (input: ControlInput) =>
         execute(null, () => {
+          if (removingBoard.current) throw new Error('Board is being removed');
           const definition = controlTypes[input.type];
           const size = {
             w: input.w ?? definition.sizes[0].w,
@@ -678,7 +731,10 @@ export function ControlsProvider({ children }: PropsWithChildren) {
             throw new Error('Unsupported control size');
           getTarget(input);
           const position = findSpace(
-            boardOccupancy(records.current, latest.current.instructions),
+            boardOccupancy(
+              controlsForBoard(selectedRef.current),
+              latest.current.instructions
+            ),
             size
           );
           if (!position)
@@ -693,6 +749,13 @@ export function ControlsProvider({ children }: PropsWithChildren) {
             ...position,
             options: input.options,
           });
+          updateBoards(
+            boardsRef.current.map((board) =>
+              board.id === selectedRef.current
+                ? { ...board, controlIds: [...board.controlIds, control.id] }
+                : board
+            )
+          );
           commit(new Map(records.current).set(control.id, control));
           return control;
         }),
@@ -824,7 +887,15 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       },
       clearError: () => setError(null),
     };
-  }, [commit, queueSpeed, report, targetIsCurrent, setDeviceLight]);
+  }, [
+    commit,
+    controlsForBoard,
+    queueSpeed,
+    report,
+    targetIsCurrent,
+    setDeviceLight,
+    updateBoards,
+  ]);
 
   useEffect(() => {
     const { current } = life;
@@ -863,7 +934,7 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       )
         return;
       const matches = new Map<string, KeyPressEntry>();
-      records.current.forEach((control) => {
+      controlsForBoard(selectedRef.current).forEach((control) => {
         const binding = controlShortcuts(control).find(
           (item) => item.key === key
         );
@@ -929,6 +1000,13 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       current.keyPresses.clear();
       release(entries, true);
     };
+    const releaseBoard = (): void => {
+      const entries = [...current.keyPresses.values()].flat();
+      current.keyPresses.forEach((_, token) =>
+        current.keyPresses.set(token, [])
+      );
+      release(entries);
+    };
     const focus = (): void => {
       if (
         document.querySelector(
@@ -946,19 +1024,128 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', cancel);
+    window.addEventListener('board-input-release', releaseBoard);
     document.addEventListener('focusin', focus);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', cancel);
+      window.removeEventListener('board-input-release', releaseBoard);
       document.removeEventListener('focusin', focus);
       current.keyPresses.clear();
     };
-  }, [actions, queueSpeed, report, targetIsCurrent]);
+  }, [actions, controlsForBoard, queueSpeed, report, targetIsCurrent]);
+
+  const boardActions = useMemo(
+    () => ({
+      addBoard: () => {
+        if (removingBoard.current) return;
+        boardSerial.current += 1;
+        const id = `board-${boardSerial.current}`;
+        updateBoards([
+          ...boardsRef.current,
+          { id, name: `Board ${boardSerial.current}`, controlIds: [] },
+        ]);
+        window.dispatchEvent(new window.Event('board-input-release'));
+        selectedRef.current = id;
+        setSelectedBoardId(id);
+      },
+      selectBoard: (id: string) => {
+        if (
+          removingBoard.current ||
+          id === selectedRef.current ||
+          !boardsRef.current.some((board) => board.id === id)
+        )
+          return;
+        window.dispatchEvent(new window.Event('board-input-release'));
+        selectedRef.current = id;
+        setSelectedBoardId(id);
+      },
+      renameBoard: (id: string, name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed || trimmed.length > 80)
+          throw new Error('Enter a board name between 1 and 80 characters');
+        updateBoards(
+          boardsRef.current.map((board) =>
+            board.id === id ? { ...board, name: trimmed } : board
+          )
+        );
+      },
+      removeBoard: async (id: string) => {
+        if (removingBoard.current) throw new Error('Board is being removed');
+        if (boardsRef.current.length <= 1)
+          throw new Error('Keep at least one board');
+        const board = boardsRef.current.find((item) => item.id === id);
+        if (!board) throw new Error('Board no longer exists');
+        removingBoard.current = true;
+        try {
+          if (selectedRef.current === id)
+            window.dispatchEvent(new window.Event('board-input-release'));
+          await board.controlIds.reduce(
+            (previous, controlId) =>
+              previous.then(() =>
+                records.current.has(controlId)
+                  ? actions.remove(controlId)
+                  : undefined
+              ),
+            Promise.resolve()
+          );
+          const remaining = boardsRef.current.filter((item) => item.id !== id);
+          updateBoards(remaining);
+          if (selectedRef.current === id) {
+            selectedRef.current = remaining[0].id;
+            setSelectedBoardId(remaining[0].id);
+          }
+        } finally {
+          removingBoard.current = false;
+        }
+      },
+      stopAll: async () => {
+        window.dispatchEvent(new window.Event('board-input-release'));
+        const targets = [...life.current.activeMotors.values()].filter(
+          targetIsCurrent
+        );
+        const results = await Promise.allSettled(
+          targets.map((target) => queueSpeed(target, 0))
+        );
+        const failure = results.find((result) => result.status === 'rejected');
+        if (failure?.status === 'rejected') {
+          report(failure.reason);
+          throw failure.reason;
+        }
+      },
+    }),
+    [actions, queueSpeed, report, targetIsCurrent, updateBoards]
+  );
+  const activeBoards = useMemo(
+    () =>
+      new Set(
+        boards
+          .filter((board) =>
+            board.controlIds.some((id) => {
+              const control = controls.get(id);
+              if (!control || !controlTypes[control.type].motor) return false;
+              const device = devices.get(control.uuid)?.get(control.port);
+              return Boolean(
+                hubs.get(control.uuid)?.online &&
+                device?.connected &&
+                device.commands.speed
+              );
+            })
+          )
+          .map((board) => board.id)
+      ),
+    [boards, controls, devices, hubs]
+  );
 
   const value = useMemo<ControlContextValue>(
     () => ({
-      controls,
+      controls: selectedControls,
+      allControls: controls,
+      boards,
+      selectedBoardId,
+      activeBoards,
+      ...boardActions,
       occupancy,
       instructions,
       dismissInstructions,
@@ -970,7 +1157,12 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       ...actions,
     }),
     [
+      selectedControls,
       controls,
+      boards,
+      selectedBoardId,
+      activeBoards,
+      boardActions,
       occupancy,
       instructions,
       dismissInstructions,
@@ -995,6 +1187,14 @@ const hookFactory = contextHook(
 );
 
 export const useControls = hookFactory('controls');
+export const useBoards = hookFactory('boards');
+export const useSelectedBoardId = hookFactory('selectedBoardId');
+export const useActiveBoards = hookFactory('activeBoards');
+export const useAddBoard = hookFactory('addBoard');
+export const useSelectBoard = hookFactory('selectBoard');
+export const useRenameBoard = hookFactory('renameBoard');
+export const useRemoveBoard = hookFactory('removeBoard');
+export const useStopAll = hookFactory('stopAll');
 export const useBoardOccupancy = hookFactory('occupancy');
 export const useBoardInstructions = hookFactory('instructions');
 export const useDismissInstructions = hookFactory('dismissInstructions');
@@ -1012,10 +1212,11 @@ export const useRetryControls = hookFactory('retry');
 const useIssues = hookFactory('issues');
 const useSensorStates = hookFactory('sensorStates');
 const usePendingSpeeds = hookFactory('pendingSpeeds');
+const useAllControls = hookFactory('allControls');
 
 export function useControlStatus(id: string) {
   const control = useControl(id);
-  const controls = useControls();
+  const controls = useAllControls();
   const hubs = useHubs();
   const devices = useDevices();
   const issues = useIssues();

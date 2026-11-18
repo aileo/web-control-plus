@@ -35,6 +35,15 @@ Hover or focus an action icon to read its tooltip.
 
 ## Make the board yours
 
+Use the board tabs to add, rename, switch, or remove boards. Each board has
+its own layout and shortcuts, while connected hubs are shared. Removing a
+populated board requires confirmation and stops its motor controls. The
+**Stop all motors** button is available on every board.
+
+Switching boards releases momentary inputs; fixed-speed motors keep running.
+The motor icon on a tab indicates a motor was commanded to run, not verified
+physical motion. It clears on a confirmed stop or disconnect.
+
 The board has 10 by 6 studs and grows or shrinks to fit the available screen
 space, including fullscreen, without stretching its round studs. Tiles touch
 edge-to-edge. The initial 3 by 3 **How it works** tile includes Connect hub in
