@@ -44,6 +44,7 @@ export const { DeviceType, HubType } = lego.CONSTS;
 
 type SourceModules = {
   'components/Footer': typeof import('../../src/components/Footer.tsx');
+  'components/Header': typeof import('../../src/components/Header.tsx');
   'components/modules/controls/CustomColor': typeof import('../../src/components/modules/controls/CustomColor.tsx');
   'hooks/useHubs': typeof import('../../src/hooks/useHubs.tsx');
   'hooks/useDevices': typeof import('../../src/hooks/useDevices.tsx');
@@ -62,10 +63,12 @@ type SourceModules = {
   'components/modules/hubs/Hub': typeof import('../../src/components/modules/hubs/Hub.tsx');
   'components/modules/hubs/Device': typeof import('../../src/components/modules/hubs/Device.tsx');
   'components/modules/hubs/HubList': typeof import('../../src/components/modules/hubs/HubList.tsx');
+  'components/modules/hubs/ConnectHub': typeof import('../../src/components/modules/hubs/ConnectHub.tsx');
   'core/board-pattern': typeof import('../../src/core/board-pattern.ts');
   'core/leds': typeof import('../../src/core/leds.ts');
   'core/controlTypes': typeof import('../../src/core/controlTypes.ts');
   'core/control-layout': typeof import('../../src/core/control-layout.ts');
+  'core/project': typeof import('../../src/core/project.ts');
   'utils/deviceTypes': typeof import('../../src/utils/deviceTypes.ts');
   'theme/colors': typeof import('../../src/theme/colors.ts');
 };
@@ -113,8 +116,19 @@ export function createSourceLoader({
           return { default: lego, CONSTS: lego.CONSTS, __esModule: true };
         }
         if (/utils\/logger(?:\.ts)?$/.test(id)) {
+          const logError = (...args: unknown[]) => logs.push(args);
+          const log = () => undefined;
           return {
-            default: { error: (...args: unknown[]) => logs.push(args) },
+            default: {
+              emerg: logError,
+              alert: logError,
+              crit: logError,
+              error: logError,
+              warning: log,
+              notice: log,
+              info: log,
+              debug: log,
+            },
             __esModule: true,
           };
         }
@@ -208,6 +222,7 @@ export const devices = loadSource('hooks/useDevices');
 export const controls = loadSource('hooks/useControls');
 export const navigation = loadSource('hooks/useNavigation');
 export const toast = loadSource('hooks/useToast');
+export const project = loadSource('core/project');
 
 export function fakeDevice(
   portName: string,
@@ -367,13 +382,22 @@ export async function mount(
   function useProbeAPI() {
     return {
       controls: controls.useControls(),
+      allControls: controls.useAllControls(),
       boards: controls.useBoards(),
       selectedBoardId: controls.useSelectedBoardId(),
       activeBoards: controls.useActiveBoards(),
       addBoard: controls.useAddBoard(),
       selectBoard: controls.useSelectBoard(),
+      updateBoardSettings: controls.useUpdateBoardSettings(),
       removeBoard: controls.useRemoveBoard(),
+      replaceOfflineHub: controls.useReplaceOfflineHubControls(),
       stopAll: controls.useStopAll(),
+      snapshotProject: controls.useProjectSnapshot(),
+      restoreProject: controls.useRestoreProject(),
+      activeLocalSave: controls.useActiveLocalSave(),
+      setActiveLocalSave: controls.useSetActiveLocalSave(),
+      projectDirty: controls.useProjectDirty(),
+      projectBusy: controls.useProjectBusy(),
       error: controls.useControlsError(),
       create: controls.useAddControl(),
       update: controls.useUpdateControl(),
@@ -387,6 +411,7 @@ export async function mount(
       dismissInstructions: controls.useDismissInstructions(),
       helpPreference: controls.useHelpVisibilityPreference(),
       devices: devices.useDevices(),
+      isDeviceCurrent: devices.useIsDeviceCurrent(),
       hubs: hubs.useHubs(),
       hubsError: hubs.useHubsError(),
       addHub: hubs.useAddHub(),

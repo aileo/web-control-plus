@@ -129,6 +129,30 @@ export function controlShortcuts(control: Control): Shortcut[] {
   });
 }
 
+export function validateControlShortcuts(controls: Iterable<Control>): void {
+  const bindings = new Map<string, { binding: Shortcut; title: string }>();
+  Array.from(controls).forEach((control) => {
+    controlShortcuts(control).forEach((binding) => {
+      const key = JSON.stringify([control.uuid, control.port, binding.key]);
+      const previous = bindings.get(key);
+      if (
+        previous &&
+        (previous.binding.action !== binding.action ||
+          previous.binding.delta !== binding.delta ||
+          previous.binding.speed !== binding.speed ||
+          previous.binding.stopOnRelease !== binding.stopOnRelease)
+      ) {
+        throw new Error(
+          `Key "${shortcutLabel(binding.key)}" conflicts with ` +
+            `${previous.title}: ${previous.binding.label} ` +
+            `on port ${control.port}`
+        );
+      }
+      bindings.set(key, { binding, title: control.title });
+    });
+  });
+}
+
 // Reported millimeters; the color sensor subtracts a 20mm offset.
 export const distanceRanges: Record<number, number> = {
   [DeviceType.COLOR_DISTANCE_SENSOR]: 234,

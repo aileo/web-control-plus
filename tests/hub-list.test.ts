@@ -71,6 +71,7 @@ test('hub toolbar renders a Map and handles pending and failed connections', asy
       () =>
       (...args: Action) =>
         actions.push(args),
+    useDevices: () => new Map(),
     useHubs: () => hubs,
     useHubDevices: (uuid: string) => devices.get(uuid) || new Map(),
     useDevice: (uuid: string, port: string) => devices.get(uuid)?.get(port),
@@ -95,6 +96,7 @@ test('hub toolbar renders a Map and handles pending and failed connections', asy
         });
       };
     },
+    useReplaceOfflineHubControls: () => async () => undefined,
     usePostMessage: () => (message: { text: string; level: string }) =>
       messages.push(message),
   };

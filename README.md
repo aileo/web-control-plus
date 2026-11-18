@@ -42,6 +42,10 @@ populated board requires confirmation and stops its motor controls. The
 red **Stop all motors** button is always available in the footer and acts
 immediately, without confirmation.
 
+**Save project** and **Open project** keep named snapshots in this browser,
+including all board tabs, preset colors, layouts, and controls. Saved projects
+can be opened offline; live hardware state is not saved.
+
 Switching boards releases momentary inputs; fixed-speed motors keep running.
 The motor icon on a tab indicates a motor was commanded to run, not verified
 physical motion. It clears on a confirmed stop or disconnect.

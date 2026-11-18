@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import lego, { CONSTS } from '../core/clients/lego';
 import type { HubInfo, RawDevice, RawHub } from '../core/types';
+import type { ProjectHub } from '../core/project';
 import logger from '../utils/logger';
 import contextHook from './contextHook';
 
@@ -34,7 +35,9 @@ type HubContextValue = {
   hubs: Map<string, HubInfo>;
   error: unknown;
   connecting: boolean;
+  restoreProjectHubs: (projectHubs: readonly ProjectHub[]) => void;
   addHub: () => Promise<RawHub>;
+  replaceOfflineHub: (oldUuid: string, newUuid: string) => void;
   refreshHub: (uuid: string) => Promise<void>;
   renameHub: (uuid: string, name: string) => Promise<void>;
   removeHub: (uuid: string) => Promise<void>;
@@ -178,6 +181,11 @@ export function HubsProvider({ children }: PropsWithChildren) {
         onDetach: () => undefined,
         onDisconnect: () => undefined,
       };
+      logger.info('Hub connected', {
+        name: hub.name || 'Unnamed hub',
+        type: hub.type,
+        connectionOrder: session.connectionOrder,
+      });
       const isCurrent = (): boolean =>
         current.mounted && current.sessions.get(hub.uuid) === session;
 
@@ -223,6 +231,11 @@ export function HubsProvider({ children }: PropsWithChildren) {
       };
       session.onDisconnect = () => {
         if (!isCurrent()) return;
+        logger.info('Hub disconnected', {
+          name: hub.name || 'Unnamed hub',
+          type: hub.type,
+          connectionOrder: session.connectionOrder,
+        });
         // The connection is already gone, so no sensor unsubscribe is needed.
         session.sensors.clear();
         stop(session);
@@ -256,6 +269,35 @@ export function HubsProvider({ children }: PropsWithChildren) {
           if (current.mounted) setConnecting(false);
         }
       });
+
+    const replaceOfflineHub = (oldUuid: string, newUuid: string): void => {
+      try {
+        if (!lifecycle.current.mounted)
+          throw new Error('HubsProvider is not mounted');
+        if (oldUuid === newUuid) throw new Error('A hub cannot replace itself');
+        const oldHub = hubs.get(oldUuid);
+        const newHub = hubs.get(newUuid);
+        const session = lifecycle.current.sessions.get(newUuid);
+        if (!oldHub || oldHub.online)
+          throw new Error('The saved hub is no longer offline');
+        if (
+          !newHub?.online ||
+          !session ||
+          !session.hub.connected ||
+          lifecycle.current.sessions.has(oldUuid)
+        )
+          throw new Error('A hub connection changed during replacement');
+        session.color = oldHub.color;
+        const next = new Map(hubs);
+        next.set(newUuid, { ...newHub, color: oldHub.color });
+        next.delete(oldUuid);
+        setHubs(next);
+        setError(null);
+      } catch (cause) {
+        reportError(cause);
+        throw cause;
+      }
+    };
 
     const refreshHub = (uuid: string): Promise<void> =>
       execute(() => {
@@ -304,11 +346,33 @@ export function HubsProvider({ children }: PropsWithChildren) {
         });
       });
 
+    const restoreProjectHubs = (projectHubs: readonly ProjectHub[]) => {
+      const restored = new Map<string, HubInfo>(
+        projectHubs.map((hub) => [
+          hub.uuid,
+          {
+            ...hub,
+            connectionOrder: 0,
+            online: false,
+            system: {},
+          },
+        ])
+      );
+      lifecycle.current.sessions.forEach((session, uuid) => {
+        if (session.hub.connected) {
+          restored.set(uuid, hubInfo(session.hub, session));
+        }
+      });
+      setHubs(restored);
+    };
+
     return {
       hubs,
       error,
       connecting,
+      restoreProjectHubs,
       addHub,
+      replaceOfflineHub,
       refreshHub,
       renameHub,
       removeHub,
@@ -350,7 +414,9 @@ export const useHubByMac = (mac: string): HubInfo | undefined =>
   [...useHubs().values()].find((hub) => hub.mac === mac);
 export const useHubsError = hookFactory('error');
 export const useConnectingHub = hookFactory('connecting');
+export const useRestoreProjectHubs = hookFactory('restoreProjectHubs');
 export const useAddHub = hookFactory('addHub');
+export const useCommitOfflineHubReplacement = hookFactory('replaceOfflineHub');
 export const useRefreshHub = hookFactory('refreshHub');
 export const useRenameHub = hookFactory('renameHub');
 export const useRemoveHub = hookFactory('removeHub');

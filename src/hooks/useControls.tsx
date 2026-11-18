@@ -11,8 +11,8 @@ import {
   controlOptions,
   controlTypes,
   controlShortcuts,
+  validateControlShortcuts,
   normalizeShortcutKey,
-  shortcutLabel,
   isCompatible,
   isLightControlType,
   motorDirection,
@@ -23,6 +23,7 @@ import {
   findSpace,
   isSupportedSize,
 } from '../core/control-layout';
+import { hasSameHubSignature } from '../core/hub-replacement';
 import { isBoardColor, type BoardColor } from '../core/board-colors';
 import type {
   BoardOccupant,
@@ -34,14 +35,28 @@ import type {
   Rect,
   SensorTarget,
 } from '../core/types';
+import {
+  createProjectSnapshot,
+  projectContentKey,
+  validateProject,
+  type LocalProjectIdentity,
+  type ProjectHardware,
+  type ProjectSnapshot,
+} from '../core/project';
 import logger from '../utils/logger';
 import { ledCapabilities, type LightChanges } from '../core/leds';
 import contextHook from './contextHook';
-import { useHubs } from './useHubs';
+import {
+  useHubs,
+  useCommitOfflineHubReplacement,
+  useRestoreProjectHubs,
+} from './useHubs';
 import useHelpPreference from './useHelpPreference';
 import {
   useDevices,
   useIsDeviceCurrent,
+  useRemoveOfflineHubDevices,
+  useRestoreProjectDevices,
   useSetDeviceSpeed,
   useSetDeviceLight,
   useSubscribeDevice,
@@ -49,6 +64,31 @@ import {
 } from './useDevices';
 
 type DeviceMap = Map<string, Map<string, DeviceInfo>>;
+function projectHardware(
+  hubs: Map<string, HubInfo>,
+  devices: DeviceMap
+): ProjectHardware {
+  return {
+    hubs: [...hubs.values()].map(({ uuid, name, mac, type, color }) => ({
+      uuid,
+      name,
+      mac,
+      type,
+      color,
+    })),
+    devices: [...devices.entries()]
+      .filter(([uuid]) => hubs.has(uuid))
+      .flatMap(([, ports]) =>
+        [...ports.values()].map(({ uuid, mac, port, hubType, type }) => ({
+          uuid,
+          mac,
+          port,
+          hubType,
+          type,
+        }))
+      ),
+  };
+}
 type ControlInput = {
   type: ControlType;
   uuid: string;
@@ -126,7 +166,15 @@ type ControlContextValue = {
   selectBoard: (id: string) => void;
   updateBoardSettings: (id: string, name: string, color?: BoardColor) => void;
   removeBoard: (id: string) => Promise<void>;
+  replaceOfflineHub: (oldUuid: string, newUuid: string) => Promise<void>;
   stopAll: () => Promise<void>;
+  snapshotProject: (name: string) => ProjectSnapshot;
+  restoreProject: (snapshot: ProjectSnapshot) => Promise<void>;
+  markProjectSaved: (snapshot: ProjectSnapshot) => void;
+  activeLocalSave: LocalProjectIdentity | null;
+  setActiveLocalSave: (identity: LocalProjectIdentity | null) => void;
+  projectDirty: boolean;
+  projectBusy: boolean;
   occupancy: ReadonlyMap<string, BoardOccupant>;
   instructions: boolean;
   dismissInstructions: () => void;
@@ -170,6 +218,18 @@ const connectionKey = ({ uuid, port, connectionId }: ControlTarget): string =>
   JSON.stringify([uuid, port, connectionId]);
 const subscriptionKey = (target: SensorTarget): string =>
   JSON.stringify([target.uuid, target.port, target.connectionId, target.mode]);
+function allocateSerialId(
+  prefix: string,
+  serial: { current: number },
+  isUsed: (id: string) => boolean
+): string {
+  while (serial.current < Number.MAX_SAFE_INTEGER) {
+    serial.current += 1;
+    const id = `${prefix}${serial.current}`;
+    if (!isUsed(id)) return id;
+  }
+  throw new Error('Unable to allocate a unique identifier');
+}
 
 function sensorTarget(
   control: Control | undefined,
@@ -215,7 +275,13 @@ function lightConflict(
 
 export function ControlsProvider({ children }: PropsWithChildren) {
   const hubs = useHubs();
+  const commitOfflineHubReplacement = useCommitOfflineHubReplacement();
+  const commitOfflineHubReplacementRef = useRef(commitOfflineHubReplacement);
+  commitOfflineHubReplacementRef.current = commitOfflineHubReplacement;
   const devices = useDevices();
+  const removeOfflineHubDevices = useRemoveOfflineHubDevices();
+  const restoreProjectHubs = useRestoreProjectHubs();
+  const restoreProjectDevices = useRestoreProjectDevices();
   const setDeviceSpeed = useSetDeviceSpeed();
   const setDeviceLight = useSetDeviceLight();
   const subscribe = useSubscribeDevice();
@@ -232,6 +298,16 @@ export function ControlsProvider({ children }: PropsWithChildren) {
   const selectedRef = useRef(selectedBoardId);
   const boardSerial = useRef(1);
   const removingBoard = useRef(false);
+  const projectChange = useRef(false);
+  const keepUnavailableControls = useRef(false);
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectBaseline, setProjectBaseline] = useState(() =>
+    projectContentKey(
+      createProjectSnapshot('Current project', boards, selectedBoardId, [])
+    )
+  );
+  const [activeLocalSave, setActiveLocalSave] =
+    useState<LocalProjectIdentity | null>(null);
   const helpPreference = useHelpPreference();
   const [instructions, setInstructions] = useState(
     () => !helpPreference.hidden
@@ -289,6 +365,30 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     boardsRef.current = next;
     setBoards(next);
   }, []);
+  const snapshotProject = useCallback(
+    (name: string) =>
+      createProjectSnapshot(
+        name,
+        boardsRef.current,
+        selectedRef.current,
+        [...records.current.values()],
+        projectHardware(hubs, devices)
+      ),
+    [devices, hubs]
+  );
+  const markProjectSaved = useCallback((snapshot: ProjectSnapshot) => {
+    setProjectBaseline(projectContentKey(snapshot));
+  }, []);
+  const projectDirty =
+    projectContentKey(
+      createProjectSnapshot(
+        'Current project',
+        boards,
+        selectedBoardId,
+        [...controls.values()],
+        projectHardware(hubs, devices)
+      )
+    ) !== projectBaseline;
 
   const commit = useCallback((next: Map<string, Control>) => {
     records.current = next;
@@ -552,6 +652,7 @@ export function ControlsProvider({ children }: PropsWithChildren) {
   }, [devices, targetIsCurrent]);
 
   useEffect(() => {
+    if (keepUnavailableControls.current) return;
     const next = new Map(
       [...records.current].filter(([, control]) => hubs.has(control.uuid))
     );
@@ -561,7 +662,14 @@ export function ControlsProvider({ children }: PropsWithChildren) {
   const actions = useMemo<
     Pick<
       ControlContextValue,
-      'add' | 'update' | 'remove' | 'speed' | 'light' | 'retry' | 'clearError'
+      | 'add'
+      | 'update'
+      | 'remove'
+      | 'replaceOfflineHub'
+      | 'speed'
+      | 'light'
+      | 'retry'
+      | 'clearError'
     >
   >(() => {
     async function execute<T>(
@@ -576,6 +684,9 @@ export function ControlsProvider({ children }: PropsWithChildren) {
           }
         };
         ensureCurrent();
+        if (projectChange.current) {
+          throw new Error('A project is being opened; try again shortly');
+        }
         setError(null);
         if (id)
           setIssues((previous) => {
@@ -655,10 +766,6 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         title: control.title.trim(),
         options: controlOptions(control.type, control.options),
       } as Control;
-      const bindings = new Map<
-        string,
-        { binding: ShortcutEntry; title: string }
-      >();
       const boardId =
         boardsRef.current.find((board) => board.controlIds.includes(control.id))
           ?.id ?? selectedRef.current;
@@ -668,25 +775,7 @@ export function ControlsProvider({ children }: PropsWithChildren) {
           other.uuid === control.uuid &&
           other.port === control.port
       );
-      [...others, validated].forEach((other) => {
-        controlShortcuts(other).forEach((binding) => {
-          const previous = bindings.get(binding.key);
-          if (
-            previous &&
-            (previous.binding.action !== binding.action ||
-              previous.binding.delta !== binding.delta ||
-              previous.binding.speed !== binding.speed ||
-              previous.binding.stopOnRelease !== binding.stopOnRelease)
-          ) {
-            throw new Error(
-              `Key "${shortcutLabel(binding.key)}" conflicts with ` +
-                `${previous.title}: ${previous.binding.label} ` +
-                `on port ${control.port}`
-            );
-          }
-          bindings.set(binding.key, { binding, title: other.title });
-        });
-      });
+      validateControlShortcuts([...others, validated]);
       return validated;
     }
 
@@ -720,6 +809,70 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     }
 
     return {
+      replaceOfflineHub: (oldUuid: string, newUuid: string) =>
+        execute(null, (ensureCurrent) => {
+          if (projectChange.current || removingBoard.current) {
+            throw new Error('Another board change is in progress');
+          }
+          if (oldUuid === newUuid)
+            throw new Error('A hub cannot replace itself');
+          const currentHubs = latest.current.hubs;
+          const currentDevices = latest.current.devices;
+          const oldHub = currentHubs.get(oldUuid);
+          const newHub = currentHubs.get(newUuid);
+          const oldDevices = currentDevices.get(oldUuid) || new Map();
+          const newInventory = currentDevices.get(newUuid) || new Map();
+          const newDevices = new Map(
+            [...newInventory].filter(([, device]) => device.connected)
+          );
+          if (!oldHub || oldHub.online)
+            throw new Error('The saved hub is no longer offline');
+          if (!newHub?.online)
+            throw new Error('The new hub is no longer connected');
+          if (
+            [...oldDevices.values()].some((device) => device.connected) ||
+            [...newDevices.values()].some(
+              (device) => !isCurrent(newUuid, device.port, device.connectionId)
+            )
+          ) {
+            throw new Error('Hub devices changed during replacement');
+          }
+          if (!hasSameHubSignature(oldHub, oldDevices, newHub, newDevices)) {
+            throw new Error('Hub devices no longer match');
+          }
+
+          const affected = [...records.current.values()].filter(
+            (control) => control.uuid === oldUuid
+          );
+          const { current } = life;
+          if (
+            affected.some((control) => current.locks.has(control.id)) ||
+            [...current.activeMotors.values()].some(
+              (target) => target.uuid === oldUuid
+            ) ||
+            [...current.intendedSpeeds.values()].some(
+              ({ target }) => target.uuid === oldUuid
+            ) ||
+            [...current.subscriptions.values()].some(
+              ({ target }) => target.uuid === oldUuid
+            )
+          ) {
+            throw new Error(
+              'Wait for the disconnected hub controls to clean up'
+            );
+          }
+
+          const next = new Map(records.current);
+          affected.forEach((control) => {
+            const rebound = { ...control, uuid: newUuid };
+            getTarget(rebound);
+            next.set(control.id, validate(rebound, control.id));
+          });
+          ensureCurrent();
+          removeOfflineHubDevices(oldUuid);
+          commitOfflineHubReplacementRef.current(oldUuid, newUuid);
+          commit(next);
+        }),
       add: (input: ControlInput) =>
         execute(null, () => {
           if (removingBoard.current) throw new Error('Board is being removed');
@@ -740,9 +893,11 @@ export function ControlsProvider({ children }: PropsWithChildren) {
           );
           if (!position)
             throw new Error('Board full: no space for this control size');
-          serial.current += 1;
+          const id = allocateSerialId('control-', serial, (candidate) =>
+            records.current.has(candidate)
+          );
           const control = validate({
-            id: `control-${serial.current}`,
+            id,
             type: input.type,
             title: input.title ?? definition.label,
             uuid: input.uuid,
@@ -893,6 +1048,7 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     controlsForBoard,
     queueSpeed,
     report,
+    removeOfflineHubDevices,
     targetIsCurrent,
     setDeviceLight,
     updateBoards,
@@ -1037,15 +1193,35 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     };
   }, [actions, controlsForBoard, queueSpeed, report, targetIsCurrent]);
 
+  const stopAll = useCallback(async () => {
+    window.dispatchEvent(new window.Event('board-input-release'));
+    const targets = [...life.current.activeMotors.values()].filter(
+      targetIsCurrent
+    );
+    const results = await Promise.allSettled(
+      targets.map((target) => queueSpeed(target, 0))
+    );
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected') {
+      report(failure.reason);
+      throw failure.reason;
+    }
+  }, [queueSpeed, report, targetIsCurrent]);
+
   const boardActions = useMemo(
     () => ({
       addBoard: () => {
-        if (removingBoard.current) return;
-        boardSerial.current += 1;
-        const id = `board-${boardSerial.current}`;
+        if (removingBoard.current || projectChange.current) return;
+        const id = allocateSerialId('board-', boardSerial, (candidate) =>
+          boardsRef.current.some((board) => board.id === candidate)
+        );
         updateBoards([
           ...boardsRef.current,
-          { id, name: `Board ${boardSerial.current}`, controlIds: [] },
+          {
+            id,
+            name: `Board ${boardSerial.current}`,
+            controlIds: [],
+          },
         ]);
         window.dispatchEvent(new window.Event('board-input-release'));
         selectedRef.current = id;
@@ -1054,6 +1230,7 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       selectBoard: (id: string) => {
         if (
           removingBoard.current ||
+          projectChange.current ||
           id === selectedRef.current ||
           !boardsRef.current.some((board) => board.id === id)
         )
@@ -1063,6 +1240,8 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         setSelectedBoardId(id);
       },
       updateBoardSettings: (id: string, name: string, color?: BoardColor) => {
+        if (projectChange.current)
+          throw new Error('A project is being opened; try again shortly');
         const trimmed = name.trim();
         if (!trimmed || trimmed.length > 80)
           throw new Error('Enter a board name between 1 and 80 characters');
@@ -1077,6 +1256,8 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         );
       },
       removeBoard: async (id: string) => {
+        if (projectChange.current)
+          throw new Error('A project is being opened; try again shortly');
         if (removingBoard.current) throw new Error('Board is being removed');
         if (boardsRef.current.length <= 1)
           throw new Error('Keep at least one board');
@@ -1105,22 +1286,97 @@ export function ControlsProvider({ children }: PropsWithChildren) {
           removingBoard.current = false;
         }
       },
-      stopAll: async () => {
-        window.dispatchEvent(new window.Event('board-input-release'));
-        const targets = [...life.current.activeMotors.values()].filter(
-          targetIsCurrent
-        );
-        const results = await Promise.allSettled(
-          targets.map((target) => queueSpeed(target, 0))
-        );
-        const failure = results.find((result) => result.status === 'rejected');
-        if (failure?.status === 'rejected') {
-          report(failure.reason);
-          throw failure.reason;
+      stopAll,
+      restoreProject: async (input: ProjectSnapshot) => {
+        const snapshot = validateProject(input);
+        if (projectChange.current || removingBoard.current) {
+          throw new Error('Another board change is in progress');
+        }
+        if (life.current.locks.size) {
+          throw new Error('Wait for the current control action to finish');
+        }
+        projectChange.current = true;
+        setProjectBusy(true);
+        try {
+          await stopAll();
+          const { current } = life;
+          await current.subscriptionQueue;
+          const cleanupResults = await Promise.all(
+            [...current.subscriptions].map(async ([key, owned]) => {
+              if (!targetIsCurrent(owned.target)) {
+                return { key, failed: false, error: undefined };
+              }
+              try {
+                await unsubscribe(
+                  owned.target.uuid,
+                  owned.target.port,
+                  owned.target.mode,
+                  owned.target.connectionId
+                );
+                return { key, failed: false, error: undefined };
+              } catch (cause) {
+                owned.error = cause;
+                owned.state = 'cleanup-failed';
+                report(cause);
+                return { key, failed: true, error: cause };
+              }
+            })
+          );
+          cleanupResults
+            .filter((result) => !result.failed)
+            .forEach(({ key }) => current.subscriptions.delete(key));
+          publishSensorStates(current);
+          const cleanupFailure = cleanupResults.find((result) => result.failed);
+          if (cleanupFailure) {
+            reconcile(current);
+            await current.subscriptionQueue;
+            throw cleanupFailure.error;
+          }
+          if (!current.mounted || current !== life.current) {
+            throw new Error(
+              'ControlsProvider changed while opening the project'
+            );
+          }
+
+          restoreProjectHubs(snapshot.hubs);
+          restoreProjectDevices(snapshot.devices);
+          const nextControls = new Map(
+            snapshot.controls.map((control) => [control.id, control])
+          );
+          records.current = nextControls;
+          setControls(nextControls);
+          boardsRef.current = snapshot.boards;
+          setBoards(snapshot.boards);
+          selectedRef.current = snapshot.selectedBoardId;
+          setSelectedBoardId(snapshot.selectedBoardId);
+          keepUnavailableControls.current = true;
+          setIssues(new Map());
+          setSensorStates(new Map());
+          setPendingSpeeds(new Map());
+          setError(null);
+          setProjectBaseline(projectContentKey(snapshot));
+        } catch (cause) {
+          report(cause);
+          throw cause;
+        } finally {
+          projectChange.current = false;
+          setProjectBusy(false);
         }
       },
     }),
-    [actions, queueSpeed, report, targetIsCurrent, updateBoards]
+    [
+      actions,
+      publishSensorStates,
+      queueSpeed,
+      reconcile,
+      report,
+      restoreProjectDevices,
+      restoreProjectHubs,
+      stopAll,
+      targetIsCurrent,
+      unsubscribe,
+      updateBoards,
+    ]
   );
   const activeBoards = useMemo(
     () =>
@@ -1151,6 +1407,12 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       selectedBoardId,
       activeBoards,
       ...boardActions,
+      snapshotProject,
+      markProjectSaved,
+      activeLocalSave,
+      setActiveLocalSave,
+      projectDirty,
+      projectBusy,
       occupancy,
       instructions,
       dismissInstructions,
@@ -1168,6 +1430,12 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       selectedBoardId,
       activeBoards,
       boardActions,
+      snapshotProject,
+      markProjectSaved,
+      activeLocalSave,
+      setActiveLocalSave,
+      projectDirty,
+      projectBusy,
       occupancy,
       instructions,
       dismissInstructions,
@@ -1199,7 +1467,15 @@ export const useAddBoard = hookFactory('addBoard');
 export const useSelectBoard = hookFactory('selectBoard');
 export const useUpdateBoardSettings = hookFactory('updateBoardSettings');
 export const useRemoveBoard = hookFactory('removeBoard');
+export const useReplaceOfflineHubControls = hookFactory('replaceOfflineHub');
 export const useStopAll = hookFactory('stopAll');
+export const useProjectSnapshot = hookFactory('snapshotProject');
+export const useRestoreProject = hookFactory('restoreProject');
+export const useMarkProjectSaved = hookFactory('markProjectSaved');
+export const useActiveLocalSave = hookFactory('activeLocalSave');
+export const useSetActiveLocalSave = hookFactory('setActiveLocalSave');
+export const useProjectDirty = hookFactory('projectDirty');
+export const useProjectBusy = hookFactory('projectBusy');
 export const useBoardOccupancy = hookFactory('occupancy');
 export const useBoardInstructions = hookFactory('instructions');
 export const useDismissInstructions = hookFactory('dismissInstructions');
@@ -1217,7 +1493,7 @@ export const useRetryControls = hookFactory('retry');
 const useIssues = hookFactory('issues');
 const useSensorStates = hookFactory('sensorStates');
 const usePendingSpeeds = hookFactory('pendingSpeeds');
-const useAllControls = hookFactory('allControls');
+export const useAllControls = hookFactory('allControls');
 
 export function useControlStatus(id: string) {
   const control = useControl(id);
