@@ -1,6 +1,6 @@
 {
   "name": "web-control-plus",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "description": "Web interface to control Lego hubs",
   "scripts": {
