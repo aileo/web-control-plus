@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppBar, Box, Toolbar, Typography } from '@mui/material';
+import FullscreenButton from './FullscreenButton';
 import HubList from './modules/hubs/HubList';
 import ProjectActions from './ProjectActions';
 
@@ -32,6 +33,7 @@ export default () => (
           }}
         >
           <ProjectActions />
+          <FullscreenButton />
           <Box sx={{ minWidth: 0, maxWidth: '100%' }}>
             <HubList />
           </Box>

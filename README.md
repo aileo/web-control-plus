@@ -32,6 +32,8 @@ currently supported. Pairing it in the operating system does not resolve this.
 Hub colors help identify which controls belong together. Hub menus show battery
 and connection status, connected devices, and disconnect/shutdown actions.
 Hover or focus an action icon to read its tooltip.
+Use **Enter fullscreen** in the header to expand the entire app, including
+hub controls and dialogs. Select **Exit fullscreen** or press Escape to return.
 
 ## Make the board yours
 

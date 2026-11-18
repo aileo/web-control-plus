@@ -44,6 +44,7 @@ export const { DeviceType, HubType } = lego.CONSTS;
 
 type SourceModules = {
   'components/Footer': typeof import('../../src/components/Footer.tsx');
+  'components/FullscreenButton': typeof import('../../src/components/FullscreenButton.tsx');
   'components/Header': typeof import('../../src/components/Header.tsx');
   'components/modules/controls/CustomColor': typeof import('../../src/components/modules/controls/CustomColor.tsx');
   'hooks/useHubs': typeof import('../../src/hooks/useHubs.tsx');
