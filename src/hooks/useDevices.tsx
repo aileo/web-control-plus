@@ -16,6 +16,7 @@ import type {
   RawDevice,
   RawHub,
 } from '../core/types';
+import type { ProjectDevice } from '../core/project';
 import { ledCapabilities, lightSelection, writeLight } from '../core/leds';
 import type { LightChanges } from '../core/leds';
 import logger from '../utils/logger';
@@ -62,6 +63,8 @@ type DeviceLifecycle = {
 type DeviceContextValue = {
   devices: DeviceMap;
   error: unknown;
+  restoreProjectDevices: (projectDevices: readonly ProjectDevice[]) => void;
+  removeOfflineHubDevices: (uuid: string) => void;
   setSpeed: (
     uuid: string,
     port: string,
@@ -161,6 +164,8 @@ export function DevicesProvider({ children }: PropsWithChildren) {
   hubColorAction.current = setHubColor;
   const [devices, setDevices] = useState<DeviceMap>(() => new Map());
   const [error, setError] = useState<unknown>(null);
+  const latest = useRef({ hubs, devices });
+  latest.current = { hubs, devices };
   const lifecycle = useRef<DeviceLifecycle>({
     mounted: false,
     sessions: new Map(),
@@ -299,6 +304,7 @@ export function DevicesProvider({ children }: PropsWithChildren) {
           }
           if (!isCurrent()) throw new Error('Light connection changed');
           if (
+            !initial &&
             entry.device.type === CONSTS.DeviceType.HUB_LED &&
             Object.hasOwn(changes, 'color')
           ) {
@@ -306,7 +312,7 @@ export function DevicesProvider({ children }: PropsWithChildren) {
               throw new Error('Hub light requires an RGB color');
             await hubColorAction.current(
               session.hub.uuid,
-              initial ? lego.colorFromText(session.hub.uuid).hex : next.color,
+              next.color,
               session.hub
             );
           }
@@ -439,6 +445,10 @@ export function DevicesProvider({ children }: PropsWithChildren) {
       const isCurrent = (): boolean =>
         current.mounted && current.sessions.get(uuid) === session;
 
+      setDevices((previous) =>
+        previous.has(uuid) ? previous : new Map(previous).set(uuid, new Map())
+      );
+
       function attach(device: RawDevice): void {
         if (!isCurrent()) return;
         const port = device.portName;
@@ -496,6 +506,12 @@ export function DevicesProvider({ children }: PropsWithChildren) {
           events: {},
           commands: {},
         }));
+        logger.debug('Hub device attached', {
+          hub: hub.name || 'Unnamed hub',
+          port,
+          hubType: hub.type,
+          deviceType: device.type,
+        });
         if (device.type === CONSTS.DeviceType.HUB_LED) {
           const { rgb } = lego.colorFromText(uuid);
           const color = tinycolor(rgb).toHexString();
@@ -531,12 +547,26 @@ export function DevicesProvider({ children }: PropsWithChildren) {
         if (!port) return;
         const entry = session.entries.get(port);
         if (entry?.device !== device) return;
+        logger.debug('Hub device detached', {
+          hub: hub.name || 'Unnamed hub',
+          port,
+          hubType: hub.type,
+          deviceType: device.type,
+        });
         release(session, entry, false);
         session.entries.delete(port);
         markDisconnected(uuid, port);
       };
       session.end = (cleanSubscriptions: boolean) => {
         if (!isCurrent()) return;
+        logger.info('Hub device inventory disconnected', {
+          hub: hub.name || 'Unnamed hub',
+          hubType: hub.type,
+          devices: [...session.entries.values()].map(({ port, device }) => ({
+            port,
+            type: device.type,
+          })),
+        });
         session.connected = cleanSubscriptions;
         stop(session, cleanSubscriptions);
         current.sessions.delete(uuid);
@@ -595,9 +625,59 @@ export function DevicesProvider({ children }: PropsWithChildren) {
   const actions = useMemo<
     Pick<
       DeviceContextValue,
-      'setSpeed' | 'setLight' | 'isDeviceCurrent' | 'subscribe' | 'unsubscribe'
+      | 'restoreProjectDevices'
+      | 'removeOfflineHubDevices'
+      | 'setSpeed'
+      | 'setLight'
+      | 'isDeviceCurrent'
+      | 'subscribe'
+      | 'unsubscribe'
     >
   >(() => {
+    const restoreProjectDevices = (
+      projectDevices: readonly ProjectDevice[]
+    ) => {
+      setDevices((previous) => {
+        const restored = new Map<string, Map<string, DeviceInfo>>();
+        const add = (device: DeviceInfo) => {
+          const ports = restored.get(device.uuid) || new Map();
+          ports.set(device.port, device);
+          restored.set(device.uuid, ports);
+        };
+        projectDevices.forEach((device) =>
+          add({
+            ...device,
+            connected: false,
+            events: {},
+            commands: {},
+          })
+        );
+        lifecycle.current.sessions.forEach((session, uuid) => {
+          if (!session.connected || !session.hub.connected) return;
+          session.entries.forEach((entry, port) => {
+            if (session.hub.getDeviceAtPort(port) !== entry.device) return;
+            const info = previous.get(uuid)?.get(port);
+            if (info?.connected) add(info);
+          });
+        });
+        return restored;
+      });
+    };
+
+    const removeOfflineHubDevices = (uuid: string): void => {
+      const currentHubs = latest.current.hubs;
+      const currentDevices = latest.current.devices;
+      const hub = currentHubs.get(uuid);
+      if (!hub || hub.online || lifecycle.current.sessions.has(uuid))
+        throw new Error('The saved hub is no longer offline');
+      const inventory = currentDevices.get(uuid);
+      if ([...(inventory?.values() || [])].some((device) => device.connected))
+        throw new Error('The saved hub has connected devices');
+      const next = new Map(currentDevices);
+      next.delete(uuid);
+      setDevices(next);
+    };
+
     function isDeviceCurrent(
       uuid: string,
       port: string,
@@ -753,6 +833,8 @@ export function DevicesProvider({ children }: PropsWithChildren) {
     ) => subscription(uuid, port, mode, false, connectionId);
 
     return {
+      restoreProjectDevices,
+      removeOfflineHubDevices,
       setSpeed,
       setLight,
       isDeviceCurrent,
@@ -776,6 +858,10 @@ const hookFactory = contextHook(
 );
 
 export const useDevices = hookFactory('devices');
+export const useRestoreProjectDevices = hookFactory('restoreProjectDevices');
+export const useRemoveOfflineHubDevices = hookFactory(
+  'removeOfflineHubDevices'
+);
 export const useHubDevices = (
   uuid: string | undefined
 ): ReadonlyMap<string, DeviceInfo> => {

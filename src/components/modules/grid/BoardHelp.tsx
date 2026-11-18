@@ -188,11 +188,14 @@ function BoardHelp() {
           guide, even after hiding the tile.
         </p>
         <p>
-          Controls, positions, connections, settings, light selections, and keys
-          last until refresh; they are not saved. Disconnected controls are
-          disabled. Reconnecting restores sensor readings, not previous motor
+          Save project stores all board tabs, their order, selection, layouts,
+          device bindings, settings, and keys in this browser. Open project
+          restores them even while hubs are disconnected; controls stay disabled
+          until a compatible device is connected. Live connections, sensor
+          readings, motor speeds, and light commands are never saved or
+          restored. Reconnecting restores sensor readings, not previous motor
           speeds or light commands. The hub still receives its normal startup
-          color.
+          color. Browser saves are not synced to other devices or origins.
         </p>
         <p>
           Hiding or leaving the page requests a motor stop; it does not switch
