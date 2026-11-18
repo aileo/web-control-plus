@@ -63,7 +63,9 @@ type DeviceLifecycle = {
 type DeviceContextValue = {
   devices: DeviceMap;
   error: unknown;
-  restoreProjectDevices: (projectDevices: readonly ProjectDevice[]) => void;
+  restoreProjectDevices: (
+    projectDevices: readonly ProjectDevice[]
+  ) => () => void;
   removeOfflineHubDevices: (uuid: string) => void;
   setSpeed: (
     uuid: string,
@@ -637,31 +639,30 @@ export function DevicesProvider({ children }: PropsWithChildren) {
     const restoreProjectDevices = (
       projectDevices: readonly ProjectDevice[]
     ) => {
-      setDevices((previous) => {
-        const restored = new Map<string, Map<string, DeviceInfo>>();
-        const add = (device: DeviceInfo) => {
-          const ports = restored.get(device.uuid) || new Map();
-          ports.set(device.port, device);
-          restored.set(device.uuid, ports);
-        };
-        projectDevices.forEach((device) =>
-          add({
-            ...device,
-            connected: false,
-            events: {},
-            commands: {},
-          })
-        );
-        lifecycle.current.sessions.forEach((session, uuid) => {
-          if (!session.connected || !session.hub.connected) return;
-          session.entries.forEach((entry, port) => {
-            if (session.hub.getDeviceAtPort(port) !== entry.device) return;
-            const info = previous.get(uuid)?.get(port);
-            if (info?.connected) add(info);
-          });
+      const previous = latest.current.devices;
+      const restored = new Map<string, Map<string, DeviceInfo>>();
+      const add = (device: DeviceInfo) => {
+        const ports = restored.get(device.uuid) || new Map();
+        ports.set(device.port, device);
+        restored.set(device.uuid, ports);
+      };
+      projectDevices.forEach((device) =>
+        add({
+          ...device,
+          connected: false,
+          events: {},
+          commands: {},
+        })
+      );
+      lifecycle.current.sessions.forEach((session, uuid) => {
+        if (!session.connected || !session.hub.connected) return;
+        session.entries.forEach((entry, port) => {
+          if (session.hub.getDeviceAtPort(port) !== entry.device) return;
+          const info = previous.get(uuid)?.get(port);
+          if (info?.connected) add(info);
         });
-        return restored;
       });
+      return () => setDevices(restored);
     };
 
     const removeOfflineHubDevices = (uuid: string): void => {

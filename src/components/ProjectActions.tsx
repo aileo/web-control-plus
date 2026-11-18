@@ -17,9 +17,11 @@ import {
 import Download from '@mui/icons-material/Download';
 import FolderOpen from '@mui/icons-material/FolderOpen';
 import Save from '@mui/icons-material/Save';
+import UploadFile from '@mui/icons-material/UploadFile';
 import {
   useAllControls,
   useActiveLocalSave,
+  useHubs,
   useMarkProjectSaved,
   usePostMessage,
   useProjectBusy,
@@ -27,19 +29,20 @@ import {
   useProjectSnapshot,
   useRestoreProject,
   useSetActiveLocalSave,
-  useHubs,
 } from '../hooks';
 import errorMessage from '../utils/errorMessage';
 import {
   listSavedProjects,
   normalizeProjectName,
+  PROJECT_FILE_SUFFIX,
   readSavedProject,
   saveProject,
   storageKeyForProject,
-  type ProjectSnapshot,
   type LocalProjectIdentity,
+  type ProjectSnapshot,
   type SavedProject,
 } from '../core/project';
+import { prepareProjectImport, readProjectFile } from '../core/project-import';
 import { downloadProject } from '../core/project-export';
 
 const projectDialogSx = {
@@ -52,6 +55,7 @@ const projectDialogSx = {
   '& .MuiInputLabel-root.Mui-focused.Mui-error': { color: 'info.main' },
   '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
     borderColor: 'info.main',
+    borderWidth: '2px',
   },
 };
 
@@ -61,17 +65,22 @@ const projectDialogActionsSx = {
   '& .MuiButton-containedPrimary': { color: 'primary.contrastText' },
 };
 
+type ProjectDialog = 'save' | 'open';
+type DialogExit = ProjectDialog | 'confirmation';
+
 function ProjectActions() {
   const hubs = useHubs();
   const allControls = useAllControls();
   const snapshotProject = useProjectSnapshot();
   const restoreProject = useRestoreProject();
   const markProjectSaved = useMarkProjectSaved();
+  const postMessage = usePostMessage();
   const activeLocalSave = useActiveLocalSave();
   const setActiveLocalSave = useSetActiveLocalSave();
   const projectDirty = useProjectDirty();
+  const projectDirtyRef = useRef(projectDirty);
+  projectDirtyRef.current = projectDirty;
   const projectBusy = useProjectBusy();
-  const postMessage = usePostMessage();
   const hasSaveSource =
     [...hubs.values()].some((hub) => hub.online) ||
     [...allControls.values()].some((control) => Boolean(control.uuid));
@@ -85,30 +94,126 @@ function ProjectActions() {
   const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
   const [projectError, setProjectError] = useState('');
   const [confirmation, setConfirmation] = useState<
-    'overwrite' | 'discard' | null
+    'overwrite' | 'discard' | 'import' | null
   >(null);
   const [pendingSnapshot, setPendingSnapshot] =
     useState<ProjectSnapshot | null>(null);
   const [pendingLocalSave, setPendingLocalSave] =
     useState<LocalProjectIdentity | null>(null);
+  const [pendingImport, setPendingImport] = useState<{
+    prepared: ReturnType<typeof prepareProjectImport>;
+    discardsChanges: boolean;
+  } | null>(null);
+  const [readingImport, setReadingImport] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const importButton = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const confirmationReturnFocus = useRef<HTMLElement | null>(null);
   const projectDialogRef = useRef(projectDialog);
   projectDialogRef.current = projectDialog;
   const confirmationRef = useRef(confirmation);
   confirmationRef.current = confirmation;
+  const focusAfterExits = useRef<{
+    target: HTMLElement | null;
+    pending: Set<DialogExit>;
+    requireClosedDialogs: boolean;
+  } | null>(null);
 
-  const restoreProjectActionFocus = () => {
-    if (projectDialogRef.current === null && confirmationRef.current === null) {
-      returnFocus.current?.focus();
+  const scheduleFocusAfterExits = (
+    target: HTMLElement | null,
+    dialogs: DialogExit[],
+    requireClosedDialogs = false
+  ) => {
+    const pending = new Set(dialogs);
+    if (pending.size === 0) {
+      target?.focus();
+      return;
+    }
+    focusAfterExits.current = { target, pending, requireClosedDialogs };
+  };
+
+  const restoreFocusAfterExit = (dialog: DialogExit) => {
+    const plan = focusAfterExits.current;
+    if (!plan || !plan.pending.delete(dialog) || plan.pending.size > 0) return;
+    focusAfterExits.current = null;
+    if (
+      plan.requireClosedDialogs &&
+      (projectDialogRef.current !== null || confirmationRef.current !== null)
+    ) {
+      return;
+    }
+    plan.target?.focus();
+  };
+
+  const closeProjectDialog = () => {
+    if (projectBusy || readingImport || !projectDialog) return;
+    if (confirmation !== null) {
+      scheduleFocusAfterExits(
+        returnFocus.current,
+        [projectDialog, 'confirmation'],
+        true
+      );
+      setConfirmation(null);
+      setPendingSnapshot(null);
+      setPendingLocalSave(null);
+      setPendingImport(null);
+    } else {
+      scheduleFocusAfterExits(returnFocus.current, [projectDialog], true);
+    }
+    setProjectDialog(null);
+  };
+
+  const closeConfirmation = () => {
+    if (projectBusy || confirmation === null) return;
+    scheduleFocusAfterExits(confirmationReturnFocus.current, ['confirmation']);
+    setConfirmation(null);
+    setPendingSnapshot(null);
+    setPendingLocalSave(null);
+    setPendingImport(null);
+  };
+
+  const closeAllDialogs = () => {
+    const dialogs: DialogExit[] = [];
+    if (projectDialog) dialogs.push(projectDialog);
+    if (confirmation !== null) dialogs.push('confirmation');
+    scheduleFocusAfterExits(returnFocus.current, dialogs, true);
+    setProjectDialog(null);
+    setConfirmation(null);
+    setPendingSnapshot(null);
+    setPendingLocalSave(null);
+    setPendingImport(null);
+    setProjectError('');
+  };
+
+  const importAndSave = async (
+    prepared: ReturnType<typeof prepareProjectImport>
+  ) => {
+    try {
+      await restoreProject(prepared.snapshot, prepared.commit);
+      setActiveLocalSave(prepared.identity);
+      closeAllDialogs();
+    } catch (cause) {
+      setProjectError(errorMessage(cause));
     }
   };
 
-  const restoreConfirmationFocus = () => {
-    if (projectDialogRef.current !== null) {
-      confirmationReturnFocus.current?.focus();
-    } else if (confirmationRef.current === null) {
-      returnFocus.current?.focus();
+  const importFile = async (file: File) => {
+    setReadingImport(true);
+    setProjectError('');
+    try {
+      const prepared = prepareProjectImport(await readProjectFile(file));
+      const discardsChanges = projectDirtyRef.current;
+      if (prepared.replacesSave || discardsChanges) {
+        confirmationReturnFocus.current = importButton.current;
+        setPendingImport({ prepared, discardsChanges });
+        setConfirmation('import');
+      } else {
+        await importAndSave(prepared);
+      }
+    } catch (cause) {
+      setProjectError(errorMessage(cause));
+    } finally {
+      setReadingImport(false);
     }
   };
 
@@ -132,6 +237,15 @@ function ProjectActions() {
     }
   };
 
+  const downloadSavedProject = () => {
+    if (!activeLocalSave || projectBusy) return;
+    try {
+      downloadProject(readSavedProject(activeLocalSave.id));
+    } catch (cause) {
+      postMessage({ level: 'error', text: errorMessage(cause) });
+    }
+  };
+
   const writeProject = (snapshot: ProjectSnapshot, overwrite: boolean) => {
     requireSaveSource();
     saveProject(snapshot, { overwrite });
@@ -141,11 +255,7 @@ function ProjectActions() {
       name: snapshot.name,
     });
     setProjectName(snapshot.name);
-    setProjectDialog(null);
-    setConfirmation(null);
-    setPendingSnapshot(null);
-    setPendingLocalSave(null);
-    setProjectError('');
+    closeAllDialogs();
   };
 
   const restoreSavedProject = async (
@@ -156,11 +266,7 @@ function ProjectActions() {
       await restoreProject(snapshot);
       setActiveLocalSave(identity);
       setProjectName(snapshot.name);
-      setProjectDialog(null);
-      setConfirmation(null);
-      setPendingSnapshot(null);
-      setPendingLocalSave(null);
-      setProjectError('');
+      closeAllDialogs();
     } catch (cause) {
       setProjectError(errorMessage(cause));
     }
@@ -178,6 +284,7 @@ function ProjectActions() {
       } else if (exists) {
         confirmationReturnFocus.current = opener;
         setPendingSnapshot(snapshot);
+        setPendingLocalSave(null);
         setConfirmation('overwrite');
       } else {
         writeProject(snapshot, false);
@@ -187,14 +294,30 @@ function ProjectActions() {
     }
   };
 
-  const downloadSavedProject = () => {
-    if (!activeLocalSave || projectBusy) return;
-    try {
-      downloadProject(readSavedProject(activeLocalSave.id));
-    } catch (cause) {
-      postMessage({ level: 'error', text: errorMessage(cause) });
+  let confirmationTitle = 'Discard unsaved changes?';
+  let confirmationAction = 'Discard and open';
+  let confirmationMessage =
+    `Open "${pendingSnapshot?.name}" and discard the current ` +
+    'unsaved project changes.';
+  if (confirmation === 'overwrite') {
+    confirmationTitle = 'Overwrite saved project?';
+    confirmationAction = 'Overwrite';
+    const savedName = pendingSnapshot?.name;
+    confirmationMessage = `Replace the saved project "${savedName}"?`;
+  } else if (confirmation === 'import' && pendingImport) {
+    confirmationTitle = 'Import and save project?';
+    confirmationAction = 'Import and save';
+    const { name: importedName } = pendingImport.prepared.identity;
+    confirmationMessage = `Import and save "${importedName}"?`;
+    if (pendingImport.prepared.replacesSave) {
+      confirmationMessage +=
+        ' This will replace the existing local save with the same name.';
     }
-  };
+    if (pendingImport.discardsChanges || projectDirty) {
+      confirmationMessage +=
+        ' This will discard the current unsaved project changes.';
+    }
+  }
 
   return (
     <>
@@ -256,12 +379,10 @@ function ProjectActions() {
       <Dialog
         open={projectDialog === 'save'}
         sx={projectDialogSx}
-        onClose={() => {
-          if (!projectBusy) setProjectDialog(null);
-        }}
+        onClose={closeProjectDialog}
         disableRestoreFocus
         slotProps={{
-          transition: { onExited: restoreProjectActionFocus },
+          transition: { onExited: () => restoreFocusAfterExit('save') },
         }}
         aria-labelledby="project-save-title"
       >
@@ -298,7 +419,7 @@ function ProjectActions() {
           <Button
             color="inherit"
             disabled={projectBusy}
-            onClick={() => setProjectDialog(null)}
+            onClick={closeProjectDialog}
           >
             Cancel
           </Button>
@@ -315,12 +436,10 @@ function ProjectActions() {
       <Dialog
         open={projectDialog === 'open'}
         sx={projectDialogSx}
-        onClose={() => {
-          if (!projectBusy) setProjectDialog(null);
-        }}
+        onClose={closeProjectDialog}
         disableRestoreFocus
         slotProps={{
-          transition: { onExited: restoreProjectActionFocus },
+          transition: { onExited: () => restoreFocusAfterExit('open') },
         }}
         aria-labelledby="project-open-title"
       >
@@ -329,21 +448,42 @@ function ProjectActions() {
         </DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ color: 'text.secondary' }}>
-            Projects are stored only in this browser and origin. Opening does
-            not connect hardware; saved hubs and devices remain visible, and
-            disconnected controls cannot operate them.
+            Projects are stored only in this browser and origin. Controls for
+            disconnected devices remain visible but cannot operate them.
           </DialogContentText>
           {projectError && (
             <DialogContentText role="alert" sx={{ mt: 1, color: 'error.dark' }}>
               {projectError}
             </DialogContentText>
           )}
+          <input
+            ref={fileInput}
+            type="file"
+            accept={PROJECT_FILE_SUFFIX}
+            aria-label="Import project file"
+            hidden
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              if (file && !projectBusy && !readingImport) void importFile(file);
+            }}
+          />
+          <Button
+            ref={importButton}
+            startIcon={<UploadFile />}
+            color="inherit"
+            sx={{ mt: 2, color: 'text.primary' }}
+            disabled={projectBusy || readingImport}
+            onClick={() => fileInput.current?.click()}
+          >
+            Import project
+          </Button>
           {savedProjects.length ? (
             <List aria-label="Saved projects">
               {savedProjects.map((item) => (
                 <ListItemButton
                   key={item.id}
-                  disabled={Boolean(item.error) || projectBusy}
+                  disabled={Boolean(item.error) || projectBusy || readingImport}
                   sx={{
                     color: 'text.primary',
                     '& .MuiListItemText-primary': { color: 'text.primary' },
@@ -377,7 +517,7 @@ function ProjectActions() {
             </List>
           ) : (
             !projectError && (
-              <DialogContentText sx={{ mt: 2, color: 'text.secondary' }}>
+              <DialogContentText color="text.secondary" sx={{ mt: 2 }}>
                 No saved projects yet.
               </DialogContentText>
             )
@@ -386,8 +526,8 @@ function ProjectActions() {
         <DialogActions sx={projectDialogActionsSx}>
           <Button
             color="inherit"
-            disabled={projectBusy}
-            onClick={() => setProjectDialog(null)}
+            disabled={projectBusy || readingImport}
+            onClick={closeProjectDialog}
           >
             Close
           </Button>
@@ -396,42 +536,33 @@ function ProjectActions() {
       <Dialog
         open={confirmation !== null}
         sx={projectDialogSx}
-        onClose={() => {
-          if (!projectBusy) {
-            setConfirmation(null);
-            setPendingSnapshot(null);
-            setPendingLocalSave(null);
-          }
-        }}
+        onClose={closeConfirmation}
         disableRestoreFocus
         slotProps={{
-          transition: { onExited: restoreConfirmationFocus },
+          transition: {
+            onExited: () => restoreFocusAfterExit('confirmation'),
+          },
         }}
         aria-labelledby="project-confirm-title"
       >
         <DialogTitle id="project-confirm-title" sx={{ color: 'text.primary' }}>
-          {confirmation === 'overwrite'
-            ? 'Overwrite saved project?'
-            : 'Discard unsaved changes?'}
+          {confirmationTitle}
         </DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ color: 'text.secondary' }}>
-            {confirmation === 'overwrite'
-              ? `Replace the saved project "${pendingSnapshot?.name}"?`
-              : `Open "${pendingSnapshot?.name}" and discard the current ` +
-                'unsaved project changes?'}
-            {projectError && ` ${projectError}`}
+            {confirmationMessage}
           </DialogContentText>
+          {projectError && (
+            <DialogContentText role="alert" sx={{ color: 'error.dark' }}>
+              {projectError}
+            </DialogContentText>
+          )}
         </DialogContent>
         <DialogActions sx={projectDialogActionsSx}>
           <Button
             color="inherit"
             disabled={projectBusy}
-            onClick={() => {
-              setConfirmation(null);
-              setPendingSnapshot(null);
-              setPendingLocalSave(null);
-            }}
+            onClick={closeConfirmation}
           >
             Cancel
           </Button>
@@ -440,10 +571,14 @@ function ProjectActions() {
             variant="contained"
             disabled={
               projectBusy ||
-              !pendingSnapshot ||
+              (confirmation === 'import' ? !pendingImport : !pendingSnapshot) ||
               (confirmation === 'overwrite' && !hasSaveSource)
             }
             onClick={() => {
+              if (confirmation === 'import') {
+                if (pendingImport) void importAndSave(pendingImport.prepared);
+                return;
+              }
               if (!pendingSnapshot) return;
               if (confirmation === 'overwrite') {
                 try {
@@ -458,7 +593,7 @@ function ProjectActions() {
               }
             }}
           >
-            {confirmation === 'overwrite' ? 'Overwrite' : 'Discard and open'}
+            {confirmationAction}
           </Button>
         </DialogActions>
       </Dialog>

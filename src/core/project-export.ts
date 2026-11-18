@@ -1,7 +1,5 @@
-import { serializeProject } from './project';
+import { PROJECT_FILE_SUFFIX, serializeProject } from './project';
 import type { ProjectSnapshot } from './project';
-
-export const PROJECT_FILE_SUFFIX = '.wcp.json';
 
 export function projectExportFilename(projectName: string | undefined): string {
   const sanitized = Array.from(projectName ?? '')
