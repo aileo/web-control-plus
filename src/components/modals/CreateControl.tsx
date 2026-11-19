@@ -113,8 +113,8 @@ function CreateControl({
         )}
         {full && (
           <Alert severity="warning">
-            Board full: no space for this control. Move, resize, or remove
-            another control.
+            Board full: no space for this control. Move, resize, remove another
+            control or add new board.
           </Alert>
         )}
         {error && <Alert severity="error">{error}</Alert>}
