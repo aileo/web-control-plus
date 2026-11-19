@@ -11,22 +11,24 @@ function GridControls({
   controls: ReadonlyMap<string, ControlRecord>;
   onGesture: StartGesture;
 }) {
-  return [...controls.values()].map((control) => (
-    <Box
-      key={control.id}
-      data-control-id={control.id}
-      sx={{
-        position: 'relative',
-        zIndex: 1,
-        gridColumn: `${control.x + 1} / span ${control.w}`,
-        gridRow: `${control.y + 1} / span ${control.h}`,
-        minHeight: 0,
-        minWidth: 0,
-      }}
-    >
-      <Control control={control} onGesture={onGesture} />
-    </Box>
-  ));
+  return [...controls.values()]
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+    .map((control) => (
+      <Box
+        key={control.id}
+        data-control-id={control.id}
+        sx={{
+          position: 'relative',
+          zIndex: 1,
+          gridColumn: `${control.x + 1} / span ${control.w}`,
+          gridRow: `${control.y + 1} / span ${control.h}`,
+          minHeight: 0,
+          minWidth: 0,
+        }}
+      >
+        <Control control={control} onGesture={onGesture} />
+      </Box>
+    ));
 }
 
 export default GridControls;
