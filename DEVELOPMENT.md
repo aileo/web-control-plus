@@ -7,17 +7,49 @@ For the app's purpose and user instructions, see [README](README.md).
 The app uses strict TypeScript, React 19, Vite 8, Material UI 9, and Emotion.
 Use Node.js 24, or the Docker environment.
 
+### Docker from VS Code
+
+Start Docker Desktop and make sure Microsoft's **Dev Containers** extension
+(`ms-vscode-remote.remote-containers`) is installed and enabled for this
+workspace. The **Container Tools** extension does not provide the reopen
+command. In a local VS Code window, use **File > Open Folder...** to open the
+repository root.
+Press `Ctrl+Shift+P`, type `Reopen in Container`, and select the Dev Containers
+command. If it is missing, use **Dev Containers: Open Folder in Container...**
+and select the repository root. If VS Code is already connected to this dev
+container, use **Dev Containers: Rebuild Container** to apply configuration
+changes.
+
+VS Code starts the Compose service; no separate `docker compose up` is needed.
+Open the **Local Address** for the Vite server in VS Code's **Ports** panel.
+VS Code forwards container port 8000 to a different local port if 8000 is
+busy. The Dev Container Compose override disables Docker's host port mapping
+so it doesn't compete with VS Code. If startup fails, use **Dev Containers:
+Show Container Log** to see the error.
+
+On Windows, `EIO` errors reading files under `/app` can indicate a Docker
+Desktop bind-mount problem. Restart Docker Desktop when it is safe to
+interrupt other containers, then reopen the project in its dev container.
+If the errors recur with the repo on `C:`, use a checkout in a WSL 2 Linux
+filesystem (for example `~/dev`, not `/mnt/c`). Open that checkout in VS Code
+from WSL with Docker Desktop WSL integration enabled, then reopen it in the
+dev container. Preserve any uncommitted changes before switching checkouts.
+
+### Docker from a terminal
+
 ```sh
 docker compose up --build --watch
 ```
 
-Open http://localhost:8000/. Source files are bind-mounted. The container enables
-the Vite lint watcher with `LINT_FIX_WATCH=true` and polling for Docker Desktop.
-TS/TSX changes under `src` run `npm run lint:fix`; fixes are written back to the
-host. Other watched assets are synchronized and dependency changes rebuild the
-image. Stop with Ctrl+C; `docker compose down` removes the container.
+Open http://localhost:8000/. Stop Compose with Ctrl+C;
+`docker compose down` removes the container.
 
-Without Docker:
+With either Docker workflow, the workspace is bind-mounted and `node_modules`
+stays in a container volume. The container enables the Vite lint watcher with
+`LINT_FIX_WATCH=true` and polling for Docker Desktop. TS/TSX changes under `src`
+run `npm run lint:fix`; fixes are written back to the host.
+
+### Without Docker
 
 ```sh
 npm ci --ignore-scripts
@@ -45,12 +77,10 @@ Long strings, URLs, and comments may need manual wrapping.
 Tests allow long assertion strings and module fixtures, and sequential loops
 for ordered hardware interactions; the same strict TypeScript rules apply.
 
-Compose watch synchronizes tests and configuration; source files are bind-mounted.
-For a container started without watch, copy the complete tests directory,
-including helpers, before testing local changes. From PowerShell:
+The complete workspace is bind-mounted, so tests and configuration changes are
+available in the container without copying files. From PowerShell:
 
 ```powershell
-docker compose cp .\tests app:/app
 docker compose exec -T app npm test
 docker compose exec -T app npm run typecheck
 docker compose exec -T app npm run lint
