@@ -7,13 +7,13 @@ export type ShortcutField = {
   delta?: number;
   direction?: number;
   speed?: number;
-  action?: 'on' | 'off';
+  action?: 'on' | 'off' | 'toggle';
 };
 
 export type Shortcut = {
   key: string;
   label: string;
-  action?: 'on' | 'off';
+  action?: 'on' | 'off' | 'toggle';
   delta?: number;
   speed?: number;
   stopOnRelease: boolean;
