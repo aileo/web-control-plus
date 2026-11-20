@@ -43,6 +43,7 @@ export const studSx = {
   },
 };
 
+// Create shared tile styling tinted to the connected hub color.
 export function tileSx(hubColor = legoColors.light) {
   return {
     bgcolor: legoColors.light,

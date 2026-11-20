@@ -17,15 +17,18 @@ type HubConstName = 'DeviceType' | 'HubType';
 const hubs = new Map<string, BaseHub>();
 let scanning = false;
 
+// Convert a numeric LEGO constant to its symbolic name.
 function translate(type: HubConstName, value: number): string | undefined {
   const result = CONSTS[type][value];
   return typeof result === 'string' ? result : undefined;
 }
 
+// Create a compact device label from its constant name.
 function compact(id: string): string {
   return id.split('_').reduce((result, part) => result + part[0], '');
 }
 
+// Expose the runtime hub API through the application's raw hub type.
 function asRawHub(hub: BaseHub): RawHub {
   // The declared BaseHub API hides the LPF2 two-argument unsubscribe override.
   return hub as RawHub;
@@ -33,6 +36,7 @@ function asRawHub(hub: BaseHub): RawHub {
 
 const lego = {
   CONSTS,
+  // Scan for and connect to a LEGO hub with timeout and cleanup handling.
   async add(): Promise<RawHub> {
     if (scanning) throw new Error('A hub scan is already in progress');
     scanning = true;
@@ -41,6 +45,7 @@ const lego = {
       let finished = false;
       let hub: BaseHub | undefined;
       let timer: ReturnType<typeof setTimeout>;
+      // Connect a discovered hub and resolve the pending scan.
       const discovered = (discoveredHub: BaseHub): void => {
         hub = discoveredHub;
         void (async () => {
@@ -67,6 +72,7 @@ const lego = {
           }
         })();
       };
+      // Settle the scan once and remove its listeners and timer.
       function finish(error?: unknown, result?: RawHub): void {
         if (finished) return;
         finished = true;
@@ -105,6 +111,7 @@ const lego = {
     });
   },
 
+  // Find a connected hub by its MAC address or UUID.
   get({ mac, uuid }: HubSelector): RawHub | null {
     if (mac) {
       const hub = Array.from(hubs.values()).find(
@@ -120,6 +127,7 @@ const lego = {
     return null;
   },
 
+  // Return the stable hardware identity for a hub.
   identity(hub: Pick<BaseHub, 'primaryMACAddress' | 'uuid'>): string {
     return hub.primaryMACAddress &&
       hub.primaryMACAddress !== '00:00:00:00:00:00'
@@ -127,6 +135,7 @@ const lego = {
       : hub.uuid;
   },
 
+  // Build typed device metadata from a LEGO constant.
   constToObject(type: HubConstName, value: number): DeviceTypeInfo {
     const text = translate(type, value) || 'UNKNOWN';
     return { num: value, text, compact: compact(text) };

@@ -15,47 +15,16 @@ import {
   useHub,
   useOpenModal,
   useRetryControls,
-} from '../../../hooks';
-import { getDeviceType } from '../../../utils/deviceTypes';
-import { controlTypes } from '../../../core/controlTypes';
+} from '../../../core/hooks';
+import { getDeviceType } from '../../../utils/device-types';
+import { controlTypes } from '../../../core/controls';
 import { tileSx } from '../../../theme/lego';
-import ControlError from './Error';
-import Tilt from './Tilt';
-import Distance from './Distance';
-import Color from './Color';
-import Slider from './Slider';
-import Arrows from './Arrows';
-import Stop from './Stop';
-import Light from './Light';
-import type { Control as ControlRecord, DeviceInfo } from '../../../core/types';
+import ControlError from '../../../features/controls/shared/Error';
+import controlUI from '../../../features/controls/ui';
+import type { Control as ControlRecord } from '../../../core/types';
 import type { StartGesture } from '../../types';
 
-function renderWidget(control: ControlRecord, device: DeviceInfo) {
-  switch (control.type) {
-    case 'tilt':
-      return <Tilt control={control} device={device} />;
-    case 'distance':
-      return <Distance control={control} device={device} />;
-    case 'color':
-      return <Color control={control} device={device} />;
-    case 'slider':
-      return <Slider control={control} />;
-    case 'arrows':
-      return <Arrows control={control} />;
-    case 'stop':
-      return <Stop control={control} />;
-    case 'brightness':
-    case 'power':
-    case 'palette':
-    case 'customColor':
-      return <Light control={control} device={device} />;
-    default: {
-      const unreachable: never = control;
-      throw new Error(`Unknown control: ${String(unreachable)}`);
-    }
-  }
-}
-
+// Render one control tile with status, settings, and device actions.
 function Control({
   control,
   onGesture,
@@ -69,6 +38,7 @@ function Control({
   const hub = useHub(control.uuid);
   const openModal = useOpenModal();
   const retry = useRetryControls();
+  // Open the settings dialog for this control.
   const openConfig = () => openModal('controlConfig', { id: control.id });
   const { label, icon: Icon } = getDeviceType(device?.type.text);
   const waiting =
@@ -84,7 +54,7 @@ function Control({
           justifyContent: 'center',
         }}
       >
-        {renderWidget(control, device)}
+        {controlUI[control.type].render(control, device)}
       </Box>
     );
   if (!available) {

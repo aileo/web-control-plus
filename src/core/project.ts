@@ -1,4 +1,4 @@
-import { controlOptions, validateControlShortcuts } from './controlTypes';
+import { controlOptions, validateControlShortcuts } from './controls';
 import { isBoardColor } from './board-colors';
 import { canPlace, isSupportedSize } from './control-layout';
 import type {
@@ -50,10 +50,12 @@ export type SavedProject = {
 
 export type LocalProjectIdentity = Pick<SavedProject, 'id' | 'name'>;
 
+// Narrow an unknown value to a non-array object.
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+// Validate and normalize serialized device type metadata.
 function deviceTypeInfo(value: unknown): DeviceTypeInfo | null {
   if (
     !isRecord(value) ||
@@ -76,10 +78,12 @@ const unknownType: DeviceTypeInfo = {
   compact: 'UNKNOWN',
 };
 
+// Create the stable lookup key for a device attached to a hub.
 function deviceKey(uuid: string, port: string): string {
   return JSON.stringify([uuid, port]);
 }
 
+// Validate and trim a project name.
 export function normalizeProjectName(name: unknown): string {
   if (typeof name !== 'string' || !name.trim() || name.trim().length > 80) {
     throw new Error('Enter a project name between 1 and 80 characters');
@@ -87,10 +91,12 @@ export function normalizeProjectName(name: unknown): string {
   return name.trim();
 }
 
+// Create the browser storage key for a normalized project name.
 function projectKey(name: string): string {
   return `${STORAGE_PREFIX}${encodeURIComponent(name.toLowerCase())}`;
 }
 
+// Return local storage or report when browser storage is unavailable.
 function browserStorage(): Storage {
   try {
     if (typeof window === 'undefined' || !window.localStorage) {
@@ -105,6 +111,7 @@ function browserStorage(): Storage {
   }
 }
 
+// Validate a serialized project and return its normalized snapshot.
 export function validateProject(value: unknown): ProjectSnapshot {
   if (
     !isRecord(value) ||
@@ -298,10 +305,12 @@ export function validateProject(value: unknown): ProjectSnapshot {
   };
 }
 
+// Validate and serialize a project snapshot.
 export function serializeProject(snapshot: ProjectSnapshot): string {
   return JSON.stringify(validateProject(snapshot));
 }
 
+// Parse and validate a serialized project snapshot.
 export function parseProject(serialized: string): ProjectSnapshot {
   let value: unknown;
   try {
@@ -312,6 +321,7 @@ export function parseProject(serialized: string): ProjectSnapshot {
   return validateProject(value);
 }
 
+// Build a stable key from the editable contents of a project.
 export function projectContentKey(snapshot: ProjectSnapshot): string {
   const validated = validateProject(snapshot);
   return JSON.stringify({
@@ -323,6 +333,7 @@ export function projectContentKey(snapshot: ProjectSnapshot): string {
   });
 }
 
+// Decode a user-facing project name from its storage key.
 function displayNameFromKey(key: string): string {
   try {
     return decodeURIComponent(key.slice(STORAGE_PREFIX.length));
@@ -331,6 +342,7 @@ function displayNameFromKey(key: string): string {
   }
 }
 
+// Read saved projects and report unreadable entries without hiding them.
 export function listSavedProjects(storage = browserStorage()): SavedProject[] {
   let keys: string[];
   try {
@@ -370,6 +382,7 @@ export function listSavedProjects(storage = browserStorage()): SavedProject[] {
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+// Validate and store a project, optionally replacing an existing save.
 export function saveProject(
   snapshot: ProjectSnapshot,
   {
@@ -401,6 +414,7 @@ export function saveProject(
   }
 }
 
+// Load and validate a saved project by its storage key.
 export function readSavedProject(
   id: string,
   storage = browserStorage()
@@ -432,10 +446,12 @@ export function readSavedProject(
   }
 }
 
+// Return the storage key for a validated project name.
 export function storageKeyForProject(name: string): string {
   return projectKey(normalizeProjectName(name));
 }
 
+// Build a complete project snapshot, adding placeholder hardware as needed.
 export function createProjectSnapshot(
   name: string,
   boards: Board[],

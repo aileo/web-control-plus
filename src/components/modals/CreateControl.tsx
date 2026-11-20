@@ -14,16 +14,16 @@ import {
   useBoardOccupancy,
   useDevice,
   useHub,
-} from '../../hooks';
-import { getControlTypes } from '../../core/controlTypes';
+} from '../../core/hooks';
+import { getControlTypes } from '../../core/controls';
 import { findSpace } from '../../core/control-layout';
-import { getDeviceType } from '../../utils/deviceTypes';
+import { getDeviceType } from '../../utils/device-types';
 import { legoColors } from '../../theme/lego';
 import ControlPreview from '../modules/controls/ControlPreview';
-import Size, { SizePreview } from '../modules/controls/Size';
+import Size, { SizePreview } from '../../features/controls/shared/Size';
 import type { ControlType, Size as TileSize } from '../../core/types';
 import type { DialogBusyProps } from '../types';
-import useModalAction from './useModalAction';
+import useModalAction from '../../core/hooks/useModalAction';
 
 const previews = '& [data-control-preview], & [data-size-preview]';
 const zoom = { [previews]: { transform: 'scale(1.03)' } };
@@ -52,6 +52,7 @@ const choiceSx = {
   '&.Mui-disabled': { opacity: 0.45 },
 };
 
+// Render the form for creating a control on a device port.
 function CreateControl({
   uuid,
   port,
@@ -76,6 +77,7 @@ function CreateControl({
     !choices.some((value) =>
       value.sizes.some((size) => findSpace(controls, size))
     );
+  // Validate and create a control using the selected tile size.
   const create = (size: TileSize) => {
     if (type) run(() => add({ type, uuid, port, ...size }));
   };

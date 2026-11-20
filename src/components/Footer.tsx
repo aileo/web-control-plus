@@ -1,9 +1,10 @@
 import React from 'react';
 import { AppBar, Toolbar, Stack, Link, Button } from '@mui/material';
 import StopCircle from '@mui/icons-material/StopCircle';
-import { useOpenModal, usePostMessage, useStopAll } from '../hooks';
-import errorMessage from '../utils/errorMessage';
+import { useOpenModal, usePostMessage, useStopAll } from '../core/hooks';
+import errorMessage from '../utils/error-message';
 
+// Render the footer links, help action, and stop-all control.
 function Footer() {
   const openModal = useOpenModal();
   const stop = useStopAll();

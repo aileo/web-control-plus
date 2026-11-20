@@ -9,6 +9,7 @@ const purple = '#773eb5';
 
 const texts = ['#000000', '#ffffff'] as const;
 
+// Select whichever standard text color has the stronger contrast.
 function getContrastText(color: string): string {
   return texts.reduce(
     (acc, text): { contrast: number; value: string } => {
@@ -23,6 +24,7 @@ function getContrastText(color: string): string {
   ).value;
 }
 
+// Build a theme color entry with its accessible text color.
 function colorBuilder(hex: string): { main: string; contrastText: string } {
   return {
     main: hex,

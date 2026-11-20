@@ -46,33 +46,35 @@ type SourceModules = {
   'components/Footer': typeof import('../../src/components/Footer.tsx');
   'components/FullscreenButton': typeof import('../../src/components/FullscreenButton.tsx');
   'components/Header': typeof import('../../src/components/Header.tsx');
-  'components/modules/controls/CustomColor': typeof import('../../src/components/modules/controls/CustomColor.tsx');
-  'hooks/useHubs': typeof import('../../src/hooks/useHubs.tsx');
-  'hooks/useDevices': typeof import('../../src/hooks/useDevices.tsx');
-  'hooks/useControls': typeof import('../../src/hooks/useControls.tsx');
-  'hooks/useNavigation': typeof import('../../src/hooks/useNavigation.tsx');
-  'hooks/useToast': typeof import('../../src/hooks/useToast.tsx');
-  'hooks/useHelpPreference': typeof import('../../src/hooks/useHelpPreference.ts');
+  'components/modules/controls/CustomColor': typeof import('../../src/features/controls/shared/light/CustomColor.tsx');
+  'hooks/useHubs': typeof import('../../src/core/hooks/useHubs.tsx');
+  'hooks/useDevices': typeof import('../../src/core/hooks/useDevices.tsx');
+  'hooks/useControls': typeof import('../../src/core/hooks/useControls.tsx');
+  'hooks/useNavigation': typeof import('../../src/core/hooks/useNavigation.tsx');
+  'hooks/useToast': typeof import('../../src/core/hooks/useToast.tsx');
+  'hooks/useHelpPreference': typeof import('../../src/core/hooks/useHelpPreference.ts');
   'components/ToastViewport': typeof import('../../src/components/ToastViewport.tsx');
   'components/Modal': typeof import('../../src/components/Modal.tsx');
-  'components/modules/grid/Grid': typeof import('../../src/components/modules/grid/Grid.tsx');
+  'components/modules/grid/Grid': typeof import('../../src/components/modules/board/Grid.tsx');
   'components/pages/Main': typeof import('../../src/components/pages/Main.tsx');
-  'components/modules/controls/Distance': typeof import('../../src/components/modules/controls/Distance.tsx');
+  'components/modules/controls/Distance': typeof import('../../src/features/controls/distance/Control.tsx');
   'components/modules/controls/ControlPreview': typeof import('../../src/components/modules/controls/ControlPreview.tsx');
-  'components/modules/controls/Size': typeof import('../../src/components/modules/controls/Size.tsx');
-  'components/modules/controls/Arrows': typeof import('../../src/components/modules/controls/Arrows.tsx');
-  'components/modules/hubs/Hub': typeof import('../../src/components/modules/hubs/Hub.tsx');
-  'components/modules/hubs/Device': typeof import('../../src/components/modules/hubs/Device.tsx');
-  'components/modules/hubs/HubList': typeof import('../../src/components/modules/hubs/HubList.tsx');
-  'components/modules/hubs/ConnectHub': typeof import('../../src/components/modules/hubs/ConnectHub.tsx');
+  'components/modules/controls/Size': typeof import('../../src/features/controls/shared/Size.tsx');
+  'components/modules/controls/Arrows': typeof import('../../src/features/controls/arrows/Control.tsx');
+  'features/controls/ConfigFields': typeof import('../../src/features/controls/ConfigFields.tsx');
+  'features/controls/ui': typeof import('../../src/features/controls/ui.ts');
+  'components/modules/hubs/Hub': typeof import('../../src/components/modules/hub/Hub.tsx');
+  'components/modules/hubs/Device': typeof import('../../src/components/modules/device/Device.tsx');
+  'components/modules/hubs/HubList': typeof import('../../src/components/modules/hub/HubList.tsx');
+  'components/modules/hubs/ConnectHub': typeof import('../../src/components/modules/hub/ConnectHub.tsx');
   'core/board-pattern': typeof import('../../src/core/board-pattern.ts');
   'core/leds': typeof import('../../src/core/leds.ts');
-  'core/controlTypes': typeof import('../../src/core/controlTypes.ts');
+  'core/controlTypes': typeof import('../../src/core/controls/index.ts');
   'core/control-layout': typeof import('../../src/core/control-layout.ts');
   'core/project': typeof import('../../src/core/project.ts');
   'core/project-export': typeof import('../../src/core/project-export.ts');
   'core/project-import': typeof import('../../src/core/project-import.ts');
-  'utils/deviceTypes': typeof import('../../src/utils/deviceTypes.ts');
+  'utils/deviceTypes': typeof import('../../src/utils/device-types/index.ts');
   'theme/colors': typeof import('../../src/theme/colors.ts');
 };
 
@@ -87,7 +89,33 @@ export function createSourceLoader({
   // Cache by resolved filename so components and probes share React contexts.
   const modules = new Map<string, object>();
   function evaluateSource(relative: string): object {
-    const path = resolve(sourceRoot, relative);
+    const sourcePath = relative
+      .replace(/^hooks\//, 'core/hooks/')
+      .replace(
+        'components/modules/controls/CustomColor',
+        'features/controls/shared/light/CustomColor'
+      )
+      .replace(
+        'components/modules/controls/Distance',
+        'features/controls/distance/Control'
+      )
+      .replace(
+        'components/modules/controls/Size',
+        'features/controls/shared/Size'
+      )
+      .replace(
+        'components/modules/controls/Arrows',
+        'features/controls/arrows/Control'
+      )
+      .replace('components/modules/grid/', 'components/modules/board/')
+      .replace(
+        'components/modules/hubs/Device',
+        'components/modules/device/Device'
+      )
+      .replace('components/modules/hubs/', 'components/modules/hub/')
+      .replace('core/controlTypes', 'core/controls')
+      .replace('utils/deviceTypes', 'utils/device-types');
+    const path = resolve(sourceRoot, sourcePath);
     const file = [
       path,
       `${path}.ts`,

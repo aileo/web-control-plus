@@ -157,28 +157,29 @@ options. Hardware details stay at the client/provider boundary, where runtime
 guards still validate external input. Type checking includes the test fixtures;
 VM transpilation alone is not considered type checking.
 
-Use names and types to explain ordinary code. Reserve comments for intent that
-is not obvious locally: connection-generation ownership, command ordering,
-sensor-mode conflicts, protocol quirks, and test-isolation decisions. Avoid
-comments that merely translate an assignment or repeat a function signature.
+Use meaningful function names and a concise purpose comment above each function.
+Explain non-obvious connection ownership, ordering, and protocol decisions where
+needed. Use PascalCase for components, useCamelCase for hooks, and kebab-case
+for other source filenames.
 
-`hooks/contextHook.ts` shares typed context access and missing-provider checks;
-each provider still owns its state, lifecycle, actions, and public hooks.
-`components/modals/useModalAction.ts` shares duplicate-submit protection,
+`src/core/hooks/context-hook.ts` shares typed context access and missing-provider
+checks; each provider still owns its state, lifecycle, actions, and public hooks.
+`src/core/hooks/useModalAction.ts` shares duplicate-submit protection,
 busy/error handling, and close-on-success, while each modal retains its draft
 and explicit fields. Identical error-to-text conversion lives in
-`utils/errorMessage.ts`; domain-specific reporting stays at its current boundary.
+`src/utils/error-message.ts`; domain-specific reporting stays at its current
+boundary.
 Do not combine handlers merely because both use a ref or an async operation:
 motor releases, custom-color drafts, and layout gestures have different rules.
 
 ### Hub state
 
-`src/hooks/useHubs.tsx` owns a `Map` keyed by UUID, including offline metadata.
-Metadata refreshes every second. The browser client loads with the provider,
-but scanning starts only from the action returned by `useAddHub()`.
+`src/core/hooks/useHubs.tsx` owns a `Map` keyed by UUID, including offline
+metadata. Metadata refreshes every second. The browser client loads with the
+provider, but scanning starts only from the action returned by `useAddHub()`.
 
 ```tsx
-import { useHubs, useAddHub, useRenameHub } from './src/hooks';
+import { useHubs, useAddHub, useRenameHub } from './src/core/hooks';
 
 const hubs = useHubs();
 const addHub = useAddHub();
@@ -220,7 +221,7 @@ The backdrop remains modal and does not pass clicks through to motor controls.
 
 ### Device state
 
-`src/hooks/useDevices.tsx` owns
+`src/core/hooks/useDevices.tsx` owns
 `Map<hub UUID, Map<port name, metadata>>`. Metadata includes `uuid`, `mac`,
 `port`, numeric `hubType`, `type`, `connected`, attachment `connectionId`,
 `events`, and `commands`. Hooks expose metadata, not hardware instances.
@@ -228,7 +229,7 @@ The backdrop remains modal and does not pass clicks through to motor controls.
 ```tsx
 import {
   useDevice, useSetDeviceSpeed, useSubscribeDevice, useUnsubscribeDevice,
-} from './src/hooks';
+} from './src/core/hooks';
 
 const device = useDevice(uuid, 'A');
 const setSpeed = useSetDeviceSpeed();
@@ -256,22 +257,32 @@ Device hooks reject hub-owned system subscriptions. Subscription operations
 are serialized per attachment; WeDo's motor-power and unsubscribe signatures
 are handled at this boundary.
 
-`src/utils/deviceTypes.ts` pairs friendly labels with icons. Keep enum identities
+`src/utils/device-types` pairs friendly labels with icons. Keep enum identities
 and telemetry independent of presentation. Voltage/current are types 20/21,
 not the battery-percentage display. Unknown types use the dictionary fallback.
 
 ### Controls and layout
 
-`src/hooks/useControls.tsx` owns session-only control records and sensor
+`src/core/hooks/useControls.tsx` owns session-only control records and sensor
 subscription ownership. Records store hub UUID/port rather than hardware
-instances. `src/core/controlTypes.ts` defines compatible devices, sizes, modes,
-and plain default option objects. `controlOptions()` validates options and
-returns a fresh normalized object; partial updates retain other saved options.
+instances. `src/features/controls/definitions.ts` collects control definitions
+for compatible devices, sizes, modes, and defaults. `controlOptions()` validates
+options and returns a fresh normalized object; partial updates retain other
+saved options.
+
+Each folder in `src/features/controls` owns its option types, definition,
+widget and UI registration. Add a control by defining its type and options in
+`types.ts`, registering its definition in `definitions.ts`, and registering its
+`ui.tsx` module in `ui.ts`. Use `defineControlUI` to supply the typed widget,
+an explicit settings component or `null`, and a provider-free preview. Shared
+settings, shortcuts and the tile shell remain reusable; control-specific actions
+and validation belong in the control's folder. Keep the saved control type
+identifier stable when changing filenames.
 
 ```tsx
 import {
   useControls, useAddControl, useUpdateControl, useRemoveControl,
-} from './src/hooks';
+} from './src/core/hooks';
 
 const controls = useControls();
 const add = useAddControl();

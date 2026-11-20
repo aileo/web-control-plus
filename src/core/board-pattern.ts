@@ -16,13 +16,16 @@ const sizes: readonly (readonly [number, number])[] = [
 ];
 const colors = ['primary', 'info', 'success', 'error', 'secondary'] as const;
 
+// Generate a randomized board pattern from supported tile shapes.
 export default function createBoardPattern(
   random: () => number = Math.random
 ): Array<Rect & { color: (typeof colors)[number] }> {
   const plates: Array<Rect & { color: (typeof colors)[number] }> = [];
+  // Select a random item from a list using the injected generator.
   const pick = <T>(items: readonly T[]): T =>
     items[Math.floor(random() * items.length)];
 
+  // Split a board rectangle into supported tile shapes.
   function divide(x: number, y: number, w: number, h: number): void {
     const supported = sizes.some(
       ([width, height]) => w === width && h === height

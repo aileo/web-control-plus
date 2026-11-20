@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { IconButton, Tooltip } from '@mui/material';
 import Fullscreen from '@mui/icons-material/Fullscreen';
 import FullscreenExit from '@mui/icons-material/FullscreenExit';
-import { usePostMessage } from '../hooks/useToast';
+import { usePostMessage } from '../core/hooks/useToast';
 
+// Render a control for entering and exiting browser fullscreen mode.
 export default function FullscreenButton() {
   const postMessage = usePostMessage();
   const [fullscreen, setFullscreen] = useState(() =>
@@ -12,6 +13,7 @@ export default function FullscreenButton() {
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
+    // Keep the button state in sync with browser fullscreen changes.
     const sync = () => setFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange', sync);
     sync();
@@ -27,6 +29,7 @@ export default function FullscreenButton() {
   }
 
   const label = fullscreen ? 'Exit fullscreen' : 'Enter fullscreen';
+  // Toggle fullscreen and report browser failures through the toast system.
   const toggle = async () => {
     if (pending) return;
     const exiting = Boolean(document.fullscreenElement);
