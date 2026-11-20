@@ -1,4 +1,5 @@
 export type Options = {
+  mode: 'speed' | 'servo';
   resetOnRelease: boolean;
   reverseRotation: boolean;
   increase10Key: string;

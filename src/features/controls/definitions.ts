@@ -77,6 +77,50 @@ export function getControlTypes(
     });
 }
 
+// Only an explicitly verified adapter may enable position controls.
+export function motorPositionCapabilities(device?: DeviceInfo | null) {
+  const verified = Boolean(
+    device?.connected && device.positionDriver?.referenceValid()
+  );
+  return {
+    absolutePosition: verified,
+    finiteAngle: false,
+    positionFeedback: verified,
+    endpointDetection: verified,
+    safeStop: verified,
+  };
+}
+
+export function supportsServo(device?: DeviceInfo | null): boolean {
+  const capabilities = motorPositionCapabilities(device);
+  return (
+    capabilities.absolutePosition &&
+    capabilities.positionFeedback &&
+    capabilities.endpointDetection &&
+    capabilities.safeStop
+  );
+}
+
+export function getControlChoices(
+  device?: DeviceInfo | null
+): Array<ControlProposal & { motorMode?: 'speed' | 'servo' }> {
+  return getControlTypes(device).flatMap<
+    ControlProposal & { motorMode?: 'speed' | 'servo' }
+  >((definition) => {
+    if (definition.type !== 'slider' && definition.type !== 'arrows')
+      return [{ ...definition }];
+    const modes: ('speed' | 'servo')[] = ['speed'];
+    if (supportsServo(device)) modes.push('servo');
+    return modes.map((motorMode) => ({
+      ...definition,
+      motorMode,
+      label: `${definition.label} - ${
+        motorMode === 'speed' ? 'Speed' : 'Servo'
+      }`,
+    }));
+  });
+}
+
 // Resolve the direction multiplier applied by a control's motor settings.
 export function motorDirection(control: Control | undefined): number {
   return control

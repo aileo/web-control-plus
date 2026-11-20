@@ -20,7 +20,7 @@ import {
 } from './helpers/controls.ts';
 
 const { writeLight, lightSelection, ledCapabilities } = loadSource('core/leds');
-const { getControlTypes } = loadSource('core/controlTypes');
+const { getControlTypes } = loadSource('core/controls');
 const { colorAt, pointAt } = loadSource(
   'components/modules/controls/CustomColor'
 );

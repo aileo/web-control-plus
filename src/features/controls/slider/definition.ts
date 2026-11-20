@@ -12,6 +12,9 @@ function motorDirection(control: Control): number {
 
 // Validate settings that affect the motor slider.
 function validateOptions(options: Record<string, unknown>): void {
+  if (options.mode !== 'speed' && options.mode !== 'servo') {
+    throw new Error('Motor mode is not supported');
+  }
   if (typeof options.resetOnRelease !== 'boolean') {
     throw new Error('Invalid reset-on-release setting');
   }
@@ -23,6 +26,7 @@ function validateOptions(options: Record<string, unknown>): void {
 const slider: ControlDefinition<'slider'> = {
   label: 'Motor slider',
   defaults: {
+    mode: 'speed',
     resetOnRelease: false,
     reverseRotation: false,
     ...keyDefaults(shortcutFields),

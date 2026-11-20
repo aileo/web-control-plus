@@ -10,6 +10,7 @@ import {
   create,
   DeviceType,
   HubType,
+  lego,
 } from './helpers/controls.ts';
 
 test('controls use immutable stable-ID session state and validate changes atomically', async (t) => {
@@ -411,7 +412,7 @@ test('motor commands are ordered and pending speed changes cannot overtake the l
       ? new Promise<void>((resolve) => {
           finish = resolve;
         })
-      : Promise.resolve();
+      : Promise.resolve(lego.CONSTS.CommandFeedback.EXECUTION_COMPLETED);
   };
   let running: Promise<unknown> | undefined;
   await act(async () => {
@@ -463,6 +464,46 @@ test('failed safety stops keep controls on removal or rebinding for an explicit 
   assert.equal(hub.devices.D.speeds.length, 0);
   await act(() => view.api.remove(control.id));
   assert.equal(view.api.controls.size, 0);
+});
+
+test('Stop All retries motors unless feedback confirms stop completion', async (t) => {
+  const feedback = lego.CONSTS.CommandFeedback;
+  for (const [label, result, status] of [
+    ['discarded', feedback.EXECUTION_DISCARDED, 'EXECUTION_DISCARDED'],
+    ['pending', feedback.TRANSMISSION_PENDING, 'TRANSMISSION_PENDING'],
+    ['busy', feedback.EXECUTION_BUSY, 'EXECUTION_BUSY'],
+    ['disabled', feedback.FEEDBACK_DISABLED, 'FEEDBACK_DISABLED'],
+    ['missing', feedback.FEEDBACK_MISSING, 'FEEDBACK_MISSING'],
+    ['absent', undefined, 'FEEDBACK_MISSING'],
+  ] as const) {
+    await t.test(label, async (subtest) => {
+      const view = await mount(subtest);
+      const hub = fakeHub();
+      await act(() => view.api.addHub());
+      const control = await create(view);
+      await act(() => view.api.speed(control.id, 70));
+      const stops: number[] = [];
+      Reflect.set(hub.devices.A, 'setSpeed', async (speed: number) => {
+        if (speed === 0) {
+          stops.push(speed);
+          return result;
+        }
+        return feedback.EXECUTION_COMPLETED;
+      });
+
+      await act(async () => {
+        await assert.rejects(view.api.stopAll(), new RegExp(status));
+      });
+      assert.deepEqual(stops, [0]);
+
+      hub.devices.A.setSpeed = async (speed) => {
+        if (speed === 0) stops.push(speed);
+        return feedback.EXECUTION_COMPLETED;
+      };
+      await act(() => view.api.stopAll());
+      assert.deepEqual(stops, [0, 0]);
+    });
+  }
 });
 
 test('hidden/pagehide stops once per device and visible/reconnected controls never auto-resume', async (t) => {

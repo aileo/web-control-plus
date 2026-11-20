@@ -108,6 +108,10 @@ Home and End select -100% and +100%. Positive speed is at the top or right;
 negative speed is at the bottom or left.
 Momentary sliders also stop on cancellation or focus loss.
 
+Slider and arrow tiles currently offer **Speed** mode only. Calibrated Servo
+mode is not available until positioning, endpoint detection, and stopping have
+been verified on a supported motor and hub.
+
 With Reverse rotation enabled, displayed +40% sends -40% to the motor.
 Other controls on that motor keep their own direction settings; normal and
 reversed sliders can therefore show opposite signs for the same running motor.

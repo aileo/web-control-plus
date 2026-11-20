@@ -11,7 +11,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { JSDOM, type DOMWindow } from 'jsdom';
 import ts from 'typescript';
 import legoClient from '../../src/core/clients/lego.ts';
-import type { Control, ControlOf, ControlType } from '../../src/core/types.ts';
+import type {
+  Control,
+  ControlOf,
+  ControlType,
+  RawDevice,
+  RawHub,
+} from '../../src/core/types.ts';
+import type { PositionDriver } from '../../src/core/position-motor.ts';
 import { present } from './dom.ts';
 
 export function controlOf<K extends ControlType>(
@@ -69,7 +76,7 @@ type SourceModules = {
   'components/modules/hubs/ConnectHub': typeof import('../../src/components/modules/hub/ConnectHub.tsx');
   'core/board-pattern': typeof import('../../src/core/board-pattern.ts');
   'core/leds': typeof import('../../src/core/leds.ts');
-  'core/controlTypes': typeof import('../../src/core/controls/index.ts');
+  'core/controls': typeof import('../../src/core/controls/index.ts');
   'core/control-layout': typeof import('../../src/core/control-layout.ts');
   'core/project': typeof import('../../src/core/project.ts');
   'core/project-export': typeof import('../../src/core/project-export.ts');
@@ -113,7 +120,6 @@ export function createSourceLoader({
         'components/modules/device/Device'
       )
       .replace('components/modules/hubs/', 'components/modules/hub/')
-      .replace('core/controlTypes', 'core/controls')
       .replace('utils/deviceTypes', 'utils/device-types');
     const path = resolve(sourceRoot, sourcePath);
     const file = [
@@ -185,6 +191,7 @@ export function createSourceLoader({
       'ResizeObserver',
       'requestAnimationFrame',
       'Error',
+      'AbortController',
     ] as const) {
       if (!Object.hasOwn(globals, globalName)) {
         Object.defineProperty(context, globalName, {
@@ -277,11 +284,15 @@ export function fakeDevice(
     async writeDirect(mode: number, payload: Uint8Array) {
       this.writes.push([mode, [...payload]]);
     },
-    async setSpeed(...args: [number, number?, boolean?]) {
+    async setSpeed(
+      ...args: [number, number?, boolean?]
+    ): Promise<number | void> {
       this.speeds.push(args);
+      return lego.CONSTS.CommandFeedback.EXECUTION_COMPLETED;
     },
-    async setPower(...args: [number, boolean?]) {
+    async setPower(...args: [number, boolean?]): Promise<number | void> {
       this.powers.push(args);
+      return lego.CONSTS.CommandFeedback.EXECUTION_COMPLETED;
     },
   });
 }
@@ -351,6 +362,10 @@ interface MountOptions {
   render?: () => React.ReactNode;
   instructions?: boolean;
   configureWindow?: (window: DOMWindow) => void;
+  positionDriverFactory?: (
+    hub: RawHub,
+    device: RawDevice
+  ) => PositionDriver | undefined;
 }
 
 export async function mount(
@@ -360,6 +375,7 @@ export async function mount(
     render = () => null,
     instructions = false,
     configureWindow = () => {},
+    positionDriverFactory,
   }: MountOptions = {}
 ) {
   const dom = new JSDOM('<div id="root"></div>', {
@@ -436,6 +452,9 @@ export async function mount(
       update: controls.useUpdateControl(),
       remove: controls.useRemoveControl(),
       speed: controls.useSetControlSpeed(),
+      calibrate: controls.useCalibrateControl(),
+      position: controls.useSetControlPosition(),
+      positionStates: controls.usePositionStates(),
       light: controls.useSetControlLight(),
       deviceLight: devices.useSetDeviceLight(),
       retry: controls.useRetryControls(),
@@ -481,7 +500,7 @@ export async function mount(
             null,
             React.createElement(
               devices.DevicesProvider,
-              null,
+              { positionDriverFactory },
               show &&
                 React.createElement(
                   controls.ControlsProvider,

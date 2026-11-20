@@ -5,7 +5,7 @@ import type { Control, ControlType, DeviceInfo } from '../src/core/types.ts';
 import { loadSource, staticMarkup } from './helpers/controls.ts';
 
 const ui = loadSource('features/controls/ui').default;
-const { controlOptions, controlTypes } = loadSource('core/controlTypes');
+const { controlOptions, controlTypes } = loadSource('core/controls');
 const ConfigFields = loadSource('features/controls/ConfigFields').default;
 const Preview = loadSource(
   'components/modules/controls/ControlPreview'

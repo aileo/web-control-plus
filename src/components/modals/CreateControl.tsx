@@ -15,7 +15,7 @@ import {
   useDevice,
   useHub,
 } from '../../core/hooks';
-import { getControlTypes } from '../../core/controls';
+import { getControlChoices } from '../../core/controls';
 import { findSpace } from '../../core/control-layout';
 import { getDeviceType } from '../../utils/device-types';
 import { legoColors } from '../../theme/lego';
@@ -67,9 +67,15 @@ function CreateControl({
   const controls = useBoardOccupancy();
   const add = useAddControl();
   const { close, error, clearError, run } = useModalAction(onBusyChange);
-  const proposals = getControlTypes(device);
-  const [type, setType] = useState<ControlType | null>(null);
-  const definition = proposals.find((value) => value.type === type);
+  const proposals = getControlChoices(device);
+  const [selection, setSelection] = useState<{
+    type: ControlType;
+    motorMode?: 'speed' | 'servo';
+  } | null>(null);
+  const type = selection?.type ?? null;
+  const definition = proposals.find(
+    (value) => value.type === type && value.motorMode === selection?.motorMode
+  );
   const available = hub?.online && device?.connected;
   const choices = definition ? [definition] : proposals;
   const full =
@@ -79,7 +85,18 @@ function CreateControl({
     );
   // Validate and create a control using the selected tile size.
   const create = (size: TileSize) => {
-    if (type) run(() => add({ type, uuid, port, ...size }));
+    if (type)
+      run(() =>
+        add({
+          type,
+          uuid,
+          port,
+          ...size,
+          ...(selection?.motorMode && {
+            options: { mode: selection.motorMode },
+          }),
+        })
+      );
   };
   const firstSize = definition?.sizes.find((size) => findSpace(controls, size));
   return (
@@ -133,14 +150,17 @@ function CreateControl({
           {!type &&
             proposals.map((proposal, index) => (
               <ButtonBase
-                key={proposal.type}
+                key={`${proposal.type}-${proposal.motorMode ?? ''}`}
                 type="button"
                 autoFocus={index === 0}
                 aria-label={`Choose ${proposal.label}`}
                 disabled={busy || !available}
                 sx={choiceSx}
                 onClick={() => {
-                  setType(proposal.type);
+                  setSelection({
+                    type: proposal.type,
+                    motorMode: proposal.motorMode,
+                  });
                   clearError();
                 }}
               >
@@ -192,7 +212,7 @@ function CreateControl({
             color="inherit"
             disabled={busy}
             onClick={() => {
-              setType(null);
+              setSelection(null);
               clearError();
             }}
           >

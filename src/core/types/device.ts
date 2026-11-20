@@ -1,4 +1,5 @@
 import type { Device } from 'node-poweredup/dist/devices/device.js';
+import type { PositionDriver } from '../position-motor';
 
 export type DeviceTypeInfo = {
   num: number;
@@ -34,6 +35,7 @@ export type DeviceInfo = {
   connected: boolean;
   events: DeviceEvents;
   commands: DeviceCommands;
+  positionDriver?: PositionDriver;
   lightPending?: boolean;
   requestedBrightness?: number;
   lightError?: unknown;

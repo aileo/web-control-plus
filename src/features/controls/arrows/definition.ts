@@ -10,6 +10,9 @@ const arrowSizes = [
 
 // Validate the arrow speed and release behavior.
 function validateOptions(options: Record<string, unknown>): void {
+  if (options.mode !== 'speed' && options.mode !== 'servo') {
+    throw new Error('Motor mode is not supported');
+  }
   if (typeof options.stopOnRelease !== 'boolean') {
     throw new Error('Invalid stop-on-release setting');
   }
@@ -26,6 +29,7 @@ function validateOptions(options: Record<string, unknown>): void {
 const arrows: ControlDefinition<'arrows'> = {
   label: 'Motor arrows',
   defaults: {
+    mode: 'speed',
     speed: 100,
     stopOnRelease: true,
     ...keyDefaults(shortcutFields),

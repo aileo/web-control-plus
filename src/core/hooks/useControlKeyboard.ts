@@ -132,6 +132,9 @@ export function useControlKeyboard({
           ?.get(control.port);
         if (
           !binding ||
+          ((control.type === 'slider' || control.type === 'arrows') &&
+            control.options.mode === 'servo' &&
+            binding.speed !== 0) ||
           !latest.current.hubs.get(control.uuid)?.online ||
           !device?.connected ||
           typeof device.connectionId !== 'number' ||

@@ -7,6 +7,7 @@ import {
   loadSource,
   mount,
   fakeHub,
+  create,
   click,
   button,
   visibleText,
@@ -20,6 +21,23 @@ const { SizePreview } = loadSource('components/modules/controls/Size');
 const Modal = loadSource('components/Modal').default;
 const Grid = loadSource('components/modules/grid/Grid').default;
 const { ArrowsFace } = loadSource('components/modules/controls/Arrows');
+
+test('motor tiles display their current speed mode without commanding motion', async (t) => {
+  const view = await mount(t, { render: () => React.createElement(Grid) });
+  const hub = fakeHub();
+  await act(() => view.api.addHub());
+  for (const type of ['slider', 'arrows'] as const) {
+    const control = await create(view, type, 'A');
+    assert.equal(
+      query(
+        document,
+        `[data-control-id="${control.id}"] [data-motor-mode="speed"]`
+      ).textContent,
+      'Speed'
+    );
+  }
+  assert.equal(hub.devices.A.speeds.length, 0);
+});
 
 test('arrow faces form contiguous segments with rounded ends in both orientations and previews', async (t) => {
   await mount(t, {
@@ -174,7 +192,10 @@ test('browsing control and size previews never creates controls or invokes hardw
   await act(async () =>
     view.api.openModal('createControl', { uuid: hub.uuid, port: 'A' })
   );
-  await click(button('Choose Motor slider'));
+  assert.ok(button('Choose Motor slider - Speed'));
+  assert.ok(button('Choose Motor arrows - Speed'));
+  assert.equal(document.querySelectorAll('[aria-label*="Servo"]').length, 0);
+  await click(button('Choose Motor slider - Speed'));
   const previews = [...document.querySelectorAll('[data-size-preview]')];
   assert.equal(previews.length, 7);
   for (const preview of previews) {
@@ -184,7 +205,7 @@ test('browsing control and size previews never creates controls or invokes hardw
     assert.equal(preview.querySelectorAll('[data-stud]').length, w * h);
   }
   await click(button('Back'));
-  await click(button('Choose Motor arrows'));
+  await click(button('Choose Motor arrows - Speed'));
   await click(button('Back'));
   await click(button('Choose Stop'));
   assert.ok(button('Create Stop, 1 by 1'));

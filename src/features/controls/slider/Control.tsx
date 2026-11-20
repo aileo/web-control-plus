@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Box } from '@mui/material';
-import { useMotorControl } from '../../../core/hooks';
+import { Box, Button, Typography } from '@mui/material';
+import { useMotorControl, usePositionControl } from '../../../core/hooks';
 import Error from '../shared/Error';
 import type { ControlOf } from '../../../core/types';
 import SliderFace, { RangeInput } from '../shared/SliderFace';
@@ -17,8 +17,7 @@ const speedKeys = [
   'PageDown',
 ];
 
-// Render a motor slider with pointer and keyboard command handling.
-function Slider({ control }: { control: ControlOf<'slider'> }) {
+function SpeedSlider({ control }: { control: ControlOf<'slider'> }) {
   const { speed, command, error, available, connectionId } = useMotorControl(
     control.id
   );
@@ -151,4 +150,56 @@ function Slider({ control }: { control: ControlOf<'slider'> }) {
   );
 }
 
-export default Slider;
+function ServoSlider({ control }: { control: ControlOf<'slider'> }) {
+  const { state, available, ready, move, stop, error } = usePositionControl(
+    control.id
+  );
+  const target = Math.round((state?.fraction ?? 0.5) * 100);
+  const vertical = control.w < control.h;
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+      <Box sx={{ flex: 1, minHeight: handleHeight }}>
+        <SliderFace
+          speed={target}
+          min={0}
+          max={100}
+          vertical={vertical}
+          input={
+            <RangeInput
+              aria-label="Servo target position"
+              min={0}
+              max={100}
+              vertical={vertical}
+              value={target}
+              disabled={!ready}
+              onChange={(event) => {
+                void move(Number(event.target.value) / 100);
+              }}
+            />
+          }
+        />
+      </Box>
+      {!ready && (
+        <Typography variant="caption">Calibrate in settings</Typography>
+      )}
+      <Button
+        size="small"
+        disabled={!available}
+        onClick={() => {
+          void stop();
+        }}
+      >
+        Stop
+      </Button>
+      <Error error={error} />
+    </Box>
+  );
+}
+
+export default function Slider({ control }: { control: ControlOf<'slider'> }) {
+  return control.options.mode === 'servo' ? (
+    <ServoSlider control={control} />
+  ) : (
+    <SpeedSlider control={control} />
+  );
+}

@@ -1,4 +1,5 @@
 export type Options = {
+  mode: 'speed' | 'servo';
   speed: number;
   stopOnRelease: boolean;
   forwardKey: string;

@@ -156,6 +156,15 @@ function Control({
       <Box
         sx={{ display: 'flex', alignItems: 'center', minWidth: 0, pl: 0.75 }}
       >
+        {(control.type === 'slider' || control.type === 'arrows') && (
+          <Typography
+            data-motor-mode={control.options.mode}
+            variant="caption"
+            sx={{ fontSize: 10, mr: 0.5 }}
+          >
+            {control.options.mode === 'servo' ? 'Servo' : 'Speed'}
+          </Typography>
+        )}
         <Icon sx={{ fontSize: 12, mr: 0.5, flexShrink: 0 }} />
         <Tooltip
           title={`${hub?.name || control.uuid} - ${control.port} - ${label}`}

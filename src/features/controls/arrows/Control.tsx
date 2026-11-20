@@ -5,7 +5,7 @@ import ArrowDownward from '@mui/icons-material/ArrowDownward';
 import ArrowForward from '@mui/icons-material/ArrowForward';
 import ArrowBack from '@mui/icons-material/ArrowBack';
 import StopIcon from '@mui/icons-material/Stop';
-import { useMotorControl } from '../../../core/hooks';
+import { useMotorControl, usePositionControl } from '../../../core/hooks';
 import { legoColors } from '../../../theme/lego';
 import Error from '../shared/Error';
 import type { ControlOf } from '../../../core/types';
@@ -17,6 +17,7 @@ export function ArrowsFace({
   runSpeed = 100,
   stopOnRelease = true,
   preview = false,
+  servo = false,
   available = true,
   getButtonProps,
 }: {
@@ -25,6 +26,7 @@ export function ArrowsFace({
   runSpeed?: number;
   stopOnRelease?: boolean;
   preview?: boolean;
+  servo?: boolean;
   available?: boolean;
   getButtonProps?: (
     value: number
@@ -66,7 +68,8 @@ export function ArrowsFace({
             ? 'action.disabledBackground'
             : legoColors.red;
         else if (speed * value > 0) background = 'success.dark';
-        const action = stopOnRelease ? 'Hold to go' : 'Go';
+        let action = stopOnRelease ? 'Hold to go' : 'Go';
+        if (servo) action = 'Move to';
         const face = (
           <Box
             component={preview ? 'span' : 'button'}
@@ -130,7 +133,9 @@ export function ArrowsFace({
             disableInteractive
             key={label}
             title={
-              value === 0 ? 'Stop motor' : `${action} ${label.toLowerCase()}`
+              value === 0
+                ? 'Stop motor'
+                : `${action} ${label.toLowerCase()}${servo ? ' endpoint' : ''}`
             }
           >
             {face}
@@ -141,8 +146,7 @@ export function ArrowsFace({
   );
 }
 
-// Render the configured directional motor control.
-function Arrows({ control }: { control: ControlOf<'arrows'> }) {
+function SpeedArrows({ control }: { control: ControlOf<'arrows'> }) {
   const { speed, command, error, available, connectionId } = useMotorControl(
     control.id
   );
@@ -291,4 +295,48 @@ function Arrows({ control }: { control: ControlOf<'arrows'> }) {
   );
 }
 
-export default Arrows;
+function ServoArrows({ control }: { control: ControlOf<'arrows'> }) {
+  const { available, ready, move, stop, error } = usePositionControl(
+    control.id
+  );
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Box sx={{ flex: 1, minHeight: 0 }}>
+        <ArrowsFace
+          vertical={control.w < control.h}
+          servo
+          stopOnRelease={false}
+          available={available}
+          getButtonProps={(value) => ({
+            disabled: value === 0 ? !available : !ready,
+            onClick: () => {
+              if (value === 0) void stop();
+              else void move(value < 0 ? 0 : 1);
+            },
+            onKeyDown: (event) => {
+              if (value === 0 || ![' ', 'Enter'].includes(event.key)) return;
+              event.preventDefault();
+              if (!event.repeat && ready) void move(value < 0 ? 0 : 1);
+            },
+            onKeyUp: (event) => {
+              if (value !== 0 && [' ', 'Enter'].includes(event.key))
+                event.preventDefault();
+            },
+          })}
+        />
+      </Box>
+      {!ready && (
+        <Typography variant="caption">Calibrate in settings</Typography>
+      )}
+      <Error error={error} />
+    </Box>
+  );
+}
+
+export default function Arrows({ control }: { control: ControlOf<'arrows'> }) {
+  return control.options.mode === 'servo' ? (
+    <ServoArrows control={control} />
+  ) : (
+    <SpeedArrows control={control} />
+  );
+}

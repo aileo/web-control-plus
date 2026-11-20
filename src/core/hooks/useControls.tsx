@@ -14,6 +14,7 @@ import {
   isCompatible,
   isLightControlType,
   motorDirection,
+  supportsServo,
 } from '../controls';
 import {
   boardOccupancy,
@@ -43,6 +44,7 @@ import {
 } from '../project';
 import logger from '../../utils/logger';
 import { ledCapabilities, type LightChanges } from '../leds';
+import PositionMotor, { type PositionState } from '../position-motor';
 import contextHook from './context-hook';
 import {
   useHubs,
@@ -142,6 +144,9 @@ type ControlLifecycle = {
   tickets: Map<string, number>;
   stops: Map<string, { ticket: number; pending: Promise<void | undefined> }>;
   activeMotors: Map<string, ControlTarget>;
+  positionMotors: Map<string, { target: ControlTarget; motor: PositionMotor }>;
+  calibrating: Map<string, object>;
+  positionRequests: Map<string, object>;
   intendedSpeeds: Map<
     string,
     { target: ControlTarget; speed: number; owner?: object }
@@ -179,6 +184,7 @@ type ControlContextValue = {
   issues: Map<string, unknown>;
   sensorStates: Map<string, SensorState>;
   pendingSpeeds: Map<string, number>;
+  positionStates: Map<string, PositionState>;
   add: (input: ControlInput) => Promise<Control>;
   update: (id: string, changes: ControlChanges) => Promise<Control>;
   remove: (id: string) => Promise<void>;
@@ -187,6 +193,8 @@ type ControlContextValue = {
     speed: number,
     expected?: ExpectedMotorTarget
   ) => Promise<void | undefined>;
+  calibrate: (id: string) => Promise<void>;
+  position: (id: string, fraction: number) => Promise<void>;
   light: (
     id: string,
     changes: LightChanges,
@@ -197,6 +205,7 @@ type ControlContextValue = {
 };
 
 const controlsContext = createContext<ControlContextValue | null>(null);
+const pageIsHidden = () => document.visibilityState === 'hidden';
 // Build a stable key for one motor connection.
 const connectionKey = ({ uuid, port, connectionId }: ControlTarget): string =>
   JSON.stringify([uuid, port, connectionId]);
@@ -310,6 +319,9 @@ export function ControlsProvider({ children }: PropsWithChildren) {
   const [pendingSpeeds, setPendingSpeeds] = useState<Map<string, number>>(
     () => new Map()
   );
+  const [positionStates, setPositionStates] = useState<
+    Map<string, PositionState>
+  >(() => new Map());
   const records = useRef<Map<string, Control>>(controls);
   const latest = useRef({ hubs, devices, instructions });
   latest.current = { hubs, devices, instructions };
@@ -324,6 +336,9 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     tickets: new Map(),
     stops: new Map(),
     activeMotors: new Map(),
+    positionMotors: new Map(),
+    calibrating: new Map(),
+    positionRequests: new Map(),
     intendedSpeeds: new Map(),
     keyPresses: new Map(),
     locks: new Set(),
@@ -495,11 +510,14 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     (
       target: ControlTarget,
       speed: number,
-      owner?: object
+      owner?: object,
+      force = false
     ): Promise<void | undefined> => {
       const { current } = life;
       const key = connectionKey(target);
+      const positionPending = current.positionRequests.delete(key);
       if (speed === 0) {
+        current.calibrating.delete(key);
         current.keyPresses.forEach((entries, token) => {
           current.keyPresses.set(
             token,
@@ -510,6 +528,8 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       const activeStop = current.stops.get(key);
       if (
         speed === 0 &&
+        !force &&
+        !positionPending &&
         activeStop &&
         activeStop.ticket === current.tickets.get(key)
       ) {
@@ -517,20 +537,48 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       }
       const ticket = (current.tickets.get(key) || 0) + 1;
       current.tickets.set(key, ticket);
+      // Interrupt position work immediately, rather than queueing behind it.
+      const positionStop = current.positionMotors
+        .get(key)
+        ?.motor.stop()
+        .then(
+          () => null,
+          (cause: unknown) => ({ cause })
+        );
       current.intendedSpeeds.set(key, { target, speed, owner });
       if (current.mounted)
         setPendingSpeeds((previous) => new Map(previous).set(key, speed));
       if (speed !== 0) current.activeMotors.set(key, target);
       // Send this motor command only if its ticket remains current.
       const send = async (): Promise<void | undefined> => {
+        if (speed !== 0) {
+          const stopped = await positionStop;
+          if (stopped) throw stopped.cause;
+        }
         if (!current.mounted || current.tickets.get(key) !== ticket) return;
         if (!targetIsCurrent(target)) throw new Error('Motor disconnected');
-        await setDeviceSpeed(
+        const speedCommand = setDeviceSpeed(
           target.uuid,
           target.port,
           speed,
           target.connectionId
         );
+        if (speed === 0) {
+          const [speedResult, stopped] = await Promise.all([
+            speedCommand.then(
+              () => null,
+              (cause: unknown) => ({ cause })
+            ),
+            positionStop,
+          ]);
+          if (speedResult && stopped)
+            throw new AggregateError(
+              [speedResult.cause, stopped.cause],
+              'Speed and position stops failed'
+            );
+          if (speedResult) throw speedResult.cause;
+          if (stopped) throw stopped.cause;
+        } else await speedCommand;
         if (speed === 0 && current.tickets.get(key) === ticket) {
           current.activeMotors.delete(key);
         }
@@ -578,6 +626,9 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       tickets: new Map(),
       stops: new Map(),
       activeMotors: new Map(),
+      positionMotors: new Map(),
+      calibrating: new Map(),
+      positionRequests: new Map(),
       intendedSpeeds: new Map(),
       keyPresses: new Map(),
       locks: new Set(),
@@ -585,6 +636,10 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     life.current = current;
     // Stop all active motors when the document is being hidden or closed.
     const stopMotors = () => {
+      current.positionRequests.forEach((_owner, key) => {
+        const target = current.positionMotors.get(key)?.target;
+        if (target) current.activeMotors.set(key, target);
+      });
       current.activeMotors.forEach((target, key) => {
         if (!targetIsCurrent(target)) current.activeMotors.delete(key);
         else queueSpeed(target, 0).catch(report);
@@ -611,6 +666,9 @@ export function ControlsProvider({ children }: PropsWithChildren) {
             target.connectionId
           ).catch(report);
         }
+      });
+      current.positionMotors.forEach(({ motor }) => {
+        motor.dispose().catch(report);
       });
       reconcile(current);
     };
@@ -642,6 +700,20 @@ export function ControlsProvider({ children }: PropsWithChildren) {
   }, [desiredSignature, retry, reconcile, targetIsCurrent]);
 
   useEffect(() => {
+    life.current.positionMotors.forEach(({ target, motor }, key) => {
+      if (!targetIsCurrent(target)) {
+        life.current.tickets.set(key, (life.current.tickets.get(key) || 0) + 1);
+        life.current.positionMotors.delete(key);
+        life.current.calibrating.delete(key);
+        life.current.positionRequests.delete(key);
+        motor.dispose().catch(report);
+        setPositionStates((previous) => {
+          const next = new Map(previous);
+          next.delete(key);
+          return next;
+        });
+      }
+    });
     life.current.activeMotors.forEach((target, key) => {
       if (!targetIsCurrent(target)) life.current.activeMotors.delete(key);
     });
@@ -654,7 +726,7 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       );
       return next.size === previous.size ? previous : next;
     });
-  }, [devices, targetIsCurrent]);
+  }, [devices, targetIsCurrent, report]);
 
   useEffect(() => {
     if (keepUnavailableControls.current) return;
@@ -672,6 +744,8 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       | 'remove'
       | 'replaceOfflineHub'
       | 'speed'
+      | 'calibrate'
+      | 'position'
       | 'light'
       | 'retry'
       | 'clearError'
@@ -776,6 +850,15 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         title: control.title.trim(),
         options: controlOptions(control.type, control.options),
       } as Control;
+      if (
+        (validated.type === 'slider' || validated.type === 'arrows') &&
+        validated.options.mode === 'servo' &&
+        !supportsServo(
+          latest.current.devices.get(validated.uuid)?.get(validated.port)
+        )
+      ) {
+        throw new Error('Servo mode is not available on this device');
+      }
       const boardId =
         boardsRef.current.find((board) => board.controlIds.includes(control.id))
           ?.id ?? selectedRef.current;
@@ -817,6 +900,109 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       ) {
         const target = getTarget(control);
         await queueSpeed(target, 0);
+        const key = connectionKey(target);
+        const owned = life.current.positionMotors.get(key);
+        if (owned) {
+          life.current.positionMotors.delete(key);
+          setPositionStates((previous) => {
+            const next = new Map(previous);
+            next.delete(key);
+            return next;
+          });
+          await owned.motor.dispose();
+        }
+      }
+    }
+
+    function positionMotor(target: ControlTarget): PositionMotor {
+      const { current } = life;
+      const key = connectionKey(target);
+      const existing = current.positionMotors.get(key);
+      if (existing) return existing.motor;
+      const device = latest.current.devices.get(target.uuid)?.get(target.port);
+      const driver = device?.positionDriver;
+      if (!driver || !driver.referenceValid())
+        throw new Error('Positioning is not available');
+      const motor = new PositionMotor(
+        driver,
+        () => current === life.current && targetIsCurrent(target),
+        (state) => {
+          if (
+            current.mounted &&
+            current.positionMotors.get(key)?.motor === motor
+          )
+            setPositionStates((previous) => new Map(previous).set(key, state));
+        },
+        () => {
+          const owned = current.positionMotors.get(key);
+          if (!owned) return;
+          current.positionRequests.delete(key);
+          current.calibrating.delete(key);
+          current.positionMotors.delete(key);
+          owned.motor.dispose().catch(report);
+          if (targetIsCurrent(target))
+            queueSpeed(target, 0, undefined, true).catch(report);
+          else current.activeMotors.delete(key);
+          if (current.mounted)
+            setPositionStates((previous) => {
+              const next = new Map(previous);
+              next.delete(key);
+              return next;
+            });
+        }
+      );
+      current.positionMotors.set(key, { target, motor });
+      setPositionStates((previous) =>
+        new Map(previous).set(key, motor.snapshot())
+      );
+      return motor;
+    }
+
+    async function runPosition(
+      id: string,
+      operation: 'calibrate' | 'move',
+      fraction?: number
+    ): Promise<void> {
+      const control = getControl(id);
+      if (control.type !== 'slider' && control.type !== 'arrows')
+        throw new Error('Not a position control');
+      if (control.options.mode !== 'servo')
+        throw new Error('Control is not in Servo mode');
+      if (life.current.locks.has(id)) throw new Error('Control is busy');
+      if (pageIsHidden())
+        throw new Error('Motor controls are paused while this page is hidden');
+      const target = getTarget(control);
+      const key = connectionKey(target);
+      const { current } = life;
+      if (current.calibrating.has(key))
+        throw new Error('Motor calibration is in progress');
+      const motor = positionMotor(target);
+      const stop = queueSpeed(target, 0, undefined, true);
+      const ticket = current.tickets.get(key);
+      const owner = {};
+      current.positionRequests.set(key, owner);
+      if (operation === 'calibrate') current.calibrating.set(key, owner);
+      try {
+        await stop;
+        if (
+          !current.mounted ||
+          ticket !== current.tickets.get(key) ||
+          pageIsHidden() ||
+          !targetIsCurrent(target)
+        )
+          return;
+        current.activeMotors.set(key, target);
+        if (operation === 'calibrate') await motor.calibrate();
+        else await motor.moveFraction(fraction ?? NaN);
+      } catch (cause) {
+        if (ticket === current.tickets.get(key)) throw cause;
+      } finally {
+        if (current.calibrating.get(key) === owner)
+          current.calibrating.delete(key);
+        if (current.positionRequests.get(key) === owner)
+          current.positionRequests.delete(key);
+        if (ticket === current.tickets.get(key))
+          current.activeMotors.delete(key);
       }
     }
 
@@ -966,6 +1152,15 @@ export function ControlsProvider({ children }: PropsWithChildren) {
               getControl(id);
               getTarget(next);
               next = validate(next, id);
+            } else if (
+              (previous.type === 'slider' || previous.type === 'arrows') &&
+              (next.type === 'slider' || next.type === 'arrows') &&
+              previous.options.mode !== next.options.mode
+            ) {
+              await stopBeforeChange(previous);
+              ensureCurrent();
+              getControl(id);
+              next = validate(next, id);
             }
             commit(new Map(records.current).set(id, next));
             return next;
@@ -995,12 +1190,23 @@ export function ControlsProvider({ children }: PropsWithChildren) {
           if (control.type === 'stop' && speed !== 0) {
             throw new Error('Stop controls only support zero speed');
           }
+          if (
+            speed !== 0 &&
+            (control.type === 'slider' || control.type === 'arrows') &&
+            control.options.mode === 'servo'
+          )
+            throw new Error('Servo controls do not accept speed commands');
           if (speed !== 0 && document.visibilityState === 'hidden') {
             throw new Error(
               'Motor controls are paused while this page is hidden'
             );
           }
           const target = getTarget(control);
+          if (
+            speed !== 0 &&
+            life.current.calibrating.has(connectionKey(target))
+          )
+            throw new Error('Motor calibration is in progress');
           if (expected && connectionKey(expected) !== connectionKey(target)) {
             throw new Error('Motor connection changed');
           }
@@ -1013,6 +1219,10 @@ export function ControlsProvider({ children }: PropsWithChildren) {
             return undefined;
           return queueSpeed(target, speed, expected?.owner);
         }),
+      calibrate: (id: string) =>
+        execute(id, () => runPosition(id, 'calibrate')),
+      position: (id: string, fraction: number) =>
+        execute(id, () => runPosition(id, 'move', fraction)),
       light: (id: string, changes: LightChanges, expected?: ControlTarget) =>
         execute(id, () => {
           const control = getControl(id);
@@ -1315,6 +1525,7 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       issues,
       sensorStates,
       pendingSpeeds,
+      positionStates,
       ...actions,
     }),
     [
@@ -1338,6 +1549,7 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       issues,
       sensorStates,
       pendingSpeeds,
+      positionStates,
       actions,
     ]
   );
@@ -1383,6 +1595,9 @@ export const useAddControl = hookFactory('add');
 export const useUpdateControl = hookFactory('update');
 export const useRemoveControl = hookFactory('remove');
 export const useSetControlSpeed = hookFactory('speed');
+export const useCalibrateControl = hookFactory('calibrate');
+export const useSetControlPosition = hookFactory('position');
+export const usePositionStates = hookFactory('positionStates');
 export const useSetControlLight = hookFactory('light');
 export const useRetryControls = hookFactory('retry');
 const useIssues = hookFactory('issues');
@@ -1409,6 +1624,12 @@ export function useControlStatus(id: string) {
   let reason: string | null = null;
   if (!connected) reason = 'Device disconnected';
   else if (!compatible) reason = 'Different device attached';
+  else if (
+    (control?.type === 'slider' || control?.type === 'arrows') &&
+    control.options.mode === 'servo' &&
+    !supportsServo(device)
+  )
+    reason = 'Servo positioning unavailable';
   else if (
     isLightControlType(control?.type) &&
     control &&
@@ -1450,6 +1671,7 @@ export function useMotorControl(id: string) {
         if (!uuid || !port || typeof connectionId !== 'number') {
           throw new Error('Motor control is disconnected');
         }
+
         await send(id, speed === 0 ? 0 : speed * direction, {
           uuid,
           port,
@@ -1469,5 +1691,38 @@ export function useMotorControl(id: string) {
     connectionId: status.device?.connectionId,
     available: status.available,
     error: failure || status.error,
+  };
+}
+
+export function usePositionControl(id: string) {
+  const status = useControlStatus(id);
+  const states = usePositionStates();
+  const calibrate = useCalibrateControl();
+  const position = useSetControlPosition();
+  const speed = useSetControlSpeed();
+  const [failure, setFailure] = useState<unknown>(null);
+  const { control } = status;
+  const connectionId = status.device?.connectionId;
+  const key =
+    control && connectionId !== undefined
+      ? connectionKey({ uuid: control.uuid, port: control.port, connectionId })
+      : null;
+  const state = key ? states.get(key) : undefined;
+  const run = async (action: () => Promise<unknown>) => {
+    setFailure(null);
+    try {
+      await action();
+    } catch (cause) {
+      setFailure(cause);
+    }
+  };
+  return {
+    state,
+    available: status.available && supportsServo(status.device),
+    ready: status.available && state?.stage === 'ready',
+    error: failure || status.error || state?.error,
+    calibrate: () => run(() => calibrate(id)),
+    move: (fraction: number) => run(() => position(id, fraction)),
+    stop: () => run(() => speed(id, 0)),
   };
 }
