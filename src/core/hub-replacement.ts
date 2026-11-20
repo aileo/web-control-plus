@@ -5,6 +5,7 @@ type SignatureDevices = ReadonlyMap<string, Pick<DeviceInfo, 'type'>>;
 type HubMap = ReadonlyMap<string, HubInfo>;
 type DeviceInventory = ReadonlyMap<string, ReadonlyMap<string, DeviceInfo>>;
 
+// Build a stable signature from a hub's connected device ports and types.
 function deviceSignature(devices: SignatureDevices): string[] {
   return [...devices]
     .filter(([port, device]) => port.trim().length > 0 && device.type.num !== 0)
@@ -12,6 +13,7 @@ function deviceSignature(devices: SignatureDevices): string[] {
     .sort();
 }
 
+// Compare hub models and device inventories to identify the same physical hub.
 export function hasSameHubSignature(
   firstHub: HubSignature,
   firstDevices: SignatureDevices,
@@ -27,6 +29,7 @@ export function hasSameHubSignature(
   );
 }
 
+// Find disconnected hubs that match a newly connected hub's inventory.
 export function matchingOfflineHubUuids(
   newUuid: string,
   hubs: HubMap,

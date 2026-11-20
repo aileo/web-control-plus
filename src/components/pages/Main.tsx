@@ -31,15 +31,16 @@ import {
   useSelectBoard,
   useSelectedBoardId,
   useUpdateBoardSettings,
-} from '../../hooks';
-import errorMessage from '../../utils/errorMessage';
-import Grid from '../modules/grid/Grid';
+} from '../../core/hooks';
+import errorMessage from '../../utils/error-message';
+import Grid from '../modules/board/Grid';
 
 const colorOptions = [
   undefined,
   ...(Object.keys(BOARD_COLORS) as BoardColor[]),
 ];
 
+// Render the main board workspace and its project controls.
 function Main() {
   const boards = useBoards();
   const selected = useSelectedBoardId();
@@ -62,6 +63,7 @@ function Main() {
       inline: 'nearest',
     });
   }, [selected]);
+  // Open board settings and remember the element to restore focus to.
   const openSettings = (opener: HTMLElement) => {
     returnFocus.current = opener;
     setName(board.name);
@@ -69,6 +71,7 @@ function Main() {
     setError('');
     setDialog('settings');
   };
+  // Remove the currently selected board after its controls are stopped.
   const removeSelected = async () => {
     setBusy(true);
     try {
@@ -84,6 +87,7 @@ function Main() {
       setBusy(false);
     }
   };
+  // Keep keyboard focus movement within the board tab list.
   const onTabKeyDown = (event: React.KeyboardEvent, index: number) => {
     let next = index;
     if (event.key === 'ArrowRight') next = (index + 1) % boards.length;
@@ -96,6 +100,7 @@ function Main() {
     select(boards[next].id);
     document.getElementById(`tab-${boards[next].id}`)?.focus();
   };
+  // Save the current project through the browser's project storage.
   const save = () => {
     try {
       updateSettings(selected, name, color);

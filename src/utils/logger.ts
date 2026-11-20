@@ -35,6 +35,7 @@ const levels: Record<LogLevel, string> = {
 const levelNames = Object.keys(levels) as LogLevel[];
 
 const helpers = {
+  // Resolve a named log level to its numeric threshold.
   getLevelFromName(search: string): number {
     return levelNames.reduce(
       (result, name, level) => (search === name ? level : result),
@@ -42,10 +43,12 @@ const helpers = {
     );
   },
 
+  // Format the current time for log output.
   now(): string {
     return new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
   },
 
+  // Write a message when it meets the configured log threshold.
   log(
     level: LogLevel,
     message: string,
@@ -63,6 +66,7 @@ const helpers = {
   },
 };
 
+// Set the logger's minimum output level by name.
 export function setLevel(name: string): void {
   config.level = helpers.getLevelFromName(name);
 }

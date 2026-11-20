@@ -7,6 +7,7 @@ export const BOARD_COLORS = {
 
 export type BoardColor = keyof typeof BOARD_COLORS;
 
+// Check whether an unknown value is a supported board color.
 export function isBoardColor(value: unknown): value is BoardColor {
   return typeof value === 'string' && Object.hasOwn(BOARD_COLORS, value);
 }

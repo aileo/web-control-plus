@@ -5,12 +5,13 @@ import Header from './Header';
 import Footer from './Footer';
 import Modal from './Modal';
 import ToastViewport from './ToastViewport';
-import { NavigationProvider } from '../hooks/useNavigation';
-import { HubsProvider } from '../hooks/useHubs';
-import { DevicesProvider } from '../hooks/useDevices';
-import { ControlsProvider } from '../hooks/useControls';
-import { ToastProvider } from '../hooks/useToast';
+import { NavigationProvider } from '../core/hooks/useNavigation';
+import { HubsProvider } from '../core/hooks/useHubs';
+import { DevicesProvider } from '../core/hooks/useDevices';
+import { ControlsProvider } from '../core/hooks/useControls';
+import { ToastProvider } from '../core/hooks/useToast';
 
+// Compose the application providers and primary page regions.
 const Layout = () => (
   <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
     <ToastProvider>

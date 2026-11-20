@@ -9,10 +9,11 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useHub, useRenameHub } from '../../hooks';
+import { useHub, useRenameHub } from '../../core/hooks';
 import type { DialogBusyProps } from '../types';
-import useModalAction from './useModalAction';
+import useModalAction from '../../core/hooks/useModalAction';
 
+// Render and manage the selected hub's configuration.
 function HubConfig({
   uuid,
   busy,
@@ -24,6 +25,7 @@ function HubConfig({
   const rename = useRenameHub();
   const { close, error, run } = useModalAction(onBusyChange);
   const [name, setName] = useState(hub?.name ?? '');
+  // Validate and save the hub's edited name.
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     run(() => rename(uuid, name));

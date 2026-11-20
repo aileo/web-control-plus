@@ -1,7 +1,8 @@
 import React from 'react';
 import { Alert, Box } from '@mui/material';
-import { useDismissMessage, useToastMessages } from '../hooks/useToast';
+import { useDismissMessage, useToastMessages } from '../core/hooks/useToast';
 
+// Render the live notification region and its dismissible toasts.
 export default function ToastViewport() {
   const messages = useToastMessages();
   const dismiss = useDismissMessage();

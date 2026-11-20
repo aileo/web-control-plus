@@ -1,8 +1,8 @@
 import React from 'react';
 import { AppBar, Box, Toolbar, Typography } from '@mui/material';
 import FullscreenButton from './FullscreenButton';
-import HubList from './modules/hubs/HubList';
-import ProjectActions from './ProjectActions';
+import HubList from './modules/hub/HubList';
+import ProjectActions from './modules/project/ProjectActions';
 
 export default () => (
   <Box sx={{ flexShrink: 0 }}>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog } from '@mui/material';
-import { useCloseModal, useModal } from '../hooks';
+import { useCloseModal, useModal } from '../core/hooks';
 import type { ModalState } from '../core/types';
 import CreateControl from './modals/CreateControl';
 import ControlConfig from './modals/ControlConfig';
@@ -8,6 +8,7 @@ import HubConfig from './modals/HubConfig';
 
 type SettingsModal = Exclude<ModalState, { name: null | 'boardHelp' }>;
 
+// Render the dialog matching the active settings modal.
 function ControlDialog({ modal }: { modal: SettingsModal }) {
   const close = useCloseModal();
   const [busy, setBusy] = useState(false);
@@ -52,6 +53,7 @@ function ControlDialog({ modal }: { modal: SettingsModal }) {
   );
 }
 
+// Render the active modal and coordinate dialog visibility.
 function Modal() {
   const modal = useModal();
   return modal.name && modal.name !== 'boardHelp' ? (

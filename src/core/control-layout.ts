@@ -1,4 +1,4 @@
-import { controlTypes } from './controlTypes';
+import { controlTypes } from './controls';
 import type { ControlType, Rect, Size } from './types';
 
 type Occupant = Rect & { id: string };
@@ -15,6 +15,7 @@ export const INSTRUCTIONS_TILE = {
   h: 3,
 };
 
+// Add the optional instruction tile to the board's occupied cells.
 export function boardOccupancy(
   controls: ReadonlyMap<string, Occupant>,
   instructions: boolean
@@ -24,6 +25,7 @@ export function boardOccupancy(
     : controls;
 }
 
+// Check whether a control type supports the requested tile dimensions.
 export function isSupportedSize(
   type: ControlType,
   size: Size | undefined
@@ -33,6 +35,7 @@ export function isSupportedSize(
   );
 }
 
+// Check whether a rectangle fits within the board without overlapping controls.
 export function canPlace(
   controls: ReadonlyMap<string, Occupant>,
   rect: Rect | null | undefined,
@@ -60,6 +63,7 @@ export function canPlace(
   );
 }
 
+// Find the first free board position that fits the requested tile size.
 export function findSpace(
   controls: ReadonlyMap<string, Occupant>,
   size: Size
@@ -73,6 +77,7 @@ export function findSpace(
   return null;
 }
 
+// Choose the supported size closest to the requested dimensions.
 export function snapSize(
   type: ControlType,
   width: number,

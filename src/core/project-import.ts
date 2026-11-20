@@ -10,6 +10,7 @@ import type { ProjectSnapshot } from './project';
 
 export const MAX_PROJECT_FILE_SIZE = 5 * 1024 * 1024;
 
+// Validate a project filename and parse its serialized contents.
 export function parseProjectFile(
   filename: string,
   serialized: string
@@ -33,6 +34,7 @@ export function parseProjectFile(
   }
 }
 
+// Read and validate a project snapshot from a browser file.
 export async function readProjectFile(file: File): Promise<ProjectSnapshot> {
   if (!file.name.toLowerCase().endsWith(PROJECT_FILE_SUFFIX)) {
     throw new Error(`Choose a project file ending in ${PROJECT_FILE_SUFFIX}.`);
@@ -52,12 +54,14 @@ export async function readProjectFile(file: File): Promise<ProjectSnapshot> {
   return parseProjectFile(file.name, serialized);
 }
 
+// Prepare a guarded save operation for an imported project snapshot.
 export function prepareProjectImport(snapshot: ProjectSnapshot) {
   const identity = {
     id: storageKeyForProject(snapshot.name),
     name: snapshot.name,
   };
   const serialized = serializeProject(snapshot);
+  // Read the current saved project while surfacing storage access failures.
   const readTarget = () => {
     try {
       return window.localStorage.getItem(identity.id);

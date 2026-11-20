@@ -25,8 +25,10 @@ export const hubColorCalibration: HubColorCalibration = {
   excludedHues: [] as HueRange[],
 };
 
+// Apply hub LED calibration and brightness to an RGB color.
 export function calibrateRGB(rgb: RgbColor, brightness = 100): RgbColor {
   const { gains, gamma } = hubColorCalibration;
+  // Apply the channel-specific gain and gamma before scaling brightness.
   const scale = (channel: keyof RgbColor): number =>
     Math.round(
       (Math.min(255, 255 * (rgb[channel] / 255) ** gamma * gains[channel]) *
@@ -36,6 +38,7 @@ export function calibrateRGB(rgb: RgbColor, brightness = 100): RgbColor {
   return { r: scale('r'), g: scale('g'), b: scale('b') };
 }
 
+// Derive a stable calibrated hub color from arbitrary text.
 export function colorFromText(text: string): {
   name: string;
   hex: string;

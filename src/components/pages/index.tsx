@@ -3,6 +3,7 @@ import React from 'react';
 import { Box } from '@mui/material';
 import Main from './Main';
 
+// Wrap the main page in the application's semantic content region.
 export default function PageWrapper() {
   return (
     <Box

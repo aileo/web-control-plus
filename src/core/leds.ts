@@ -32,6 +32,7 @@ export const ledTypes: Record<number, LedCapabilities> = {
   },
 };
 
+// Return the light capabilities available for a device and hub combination.
 export function ledCapabilities(
   type: number | undefined,
   hubType?: number
@@ -44,6 +45,7 @@ export function ledCapabilities(
   return type === undefined ? null : ledTypes[type] || null;
 }
 
+// Validate and merge light changes with the previous selection.
 export function lightSelection(
   capabilities: LedCapabilities | null,
   previous: LightSelection | null,
@@ -107,6 +109,7 @@ export function lightSelection(
   return next;
 }
 
+// Send a light selection to the appropriate hardware output.
 export async function writeLight(
   device: LightOutputDevice,
   type: number,

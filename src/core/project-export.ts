@@ -1,6 +1,7 @@
 import { PROJECT_FILE_SUFFIX, serializeProject } from './project';
 import type { ProjectSnapshot } from './project';
 
+// Create a safe project filename from a project name.
 export function projectExportFilename(projectName: string | undefined): string {
   const sanitized = Array.from(projectName ?? '')
     .map((character) =>
@@ -20,6 +21,7 @@ export function projectExportFilename(projectName: string | undefined): string {
   return `${name}${PROJECT_FILE_SUFFIX}`;
 }
 
+// Serialize a project snapshot and trigger a browser download.
 export function downloadProject(snapshot: ProjectSnapshot): void {
   const blob = new Blob([serializeProject(snapshot)], {
     type: 'application/json',
