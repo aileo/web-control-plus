@@ -179,7 +179,7 @@ test('late motor completion cannot overwrite a newer stop and unmount stops acti
       ? new Promise<void>((resolve) => {
           finish = resolve;
         })
-      : Promise.resolve();
+      : Promise.resolve(lego.CONSTS.CommandFeedback.EXECUTION_COMPLETED);
   };
   let running: Promise<unknown> | undefined;
   await act(async () => {

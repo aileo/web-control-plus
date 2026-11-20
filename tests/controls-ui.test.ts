@@ -15,6 +15,7 @@ import {
   button,
   visibleText,
   DeviceType,
+  lego,
 } from './helpers/controls.ts';
 
 const Grid = loadSource('components/modules/grid/Grid').default;
@@ -307,18 +308,35 @@ test('device activation closes the popup; dialogs create/configure/remove with n
     /Choose a control/
   );
   assert.equal(hub.devices.A.speeds.length, 0);
-  await click(button('Choose Motor arrows'));
+  await click(button('Choose Motor arrows - Speed'));
   assert.match(
     query(document, '[role="dialog"]').textContent,
     /Choose a tile size/
   );
   await click(button('Back'));
   assert.equal(view.api.controls.size, 0);
-  await click(button('Choose Motor arrows'));
-  await click(button('Create Motor arrows, 2 by 1'));
+  await click(button('Choose Motor arrows - Speed'));
+  await click(button('Create Motor arrows - Speed, 2 by 1'));
   assert.equal(view.api.controls.size, 1);
   const control = [...view.api.controls.values()][0];
   assert.equal(control.type, 'arrows');
+  assert.equal(controlOf(control, 'arrows').options.mode, 'speed');
+  assert.equal(
+    query(
+      document,
+      `[data-control-id="${control.id}"] [data-motor-mode="speed"]`
+    ).textContent,
+    'Speed'
+  );
+  await act(async () => {
+    await assert.rejects(
+      () =>
+        view.api.update(control.id, {
+          options: { mode: 'servo', servoMin: -20, servoMax: 20 },
+        }),
+      /not available/
+    );
+  });
   assert.equal(hub.devices.A.speeds.length, 0);
   assert.equal(document.activeElement, trigger);
   await click(button('Configure Motor arrows'));
@@ -573,7 +591,10 @@ test('failed move reports an error toast without changing the control', async (t
   const waiting = new Promise<void>((resolve) => {
     releaseStop = resolve;
   });
-  hub.devices.A.setSpeed = async () => waiting;
+  hub.devices.A.setSpeed = async () => {
+    await waiting;
+    return lego.CONSTS.CommandFeedback.EXECUTION_COMPLETED;
+  };
   let pending: Promise<unknown> | undefined;
   await act(() => {
     pending = view.api.update(control.id, { port: 'D' });

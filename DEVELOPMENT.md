@@ -96,6 +96,28 @@ gives each DOM fixture its own style cache. Markup-only checks use `staticMarkup
 Controlled timers cover color stability without wall-clock sleeps.
 Simulated tests do not establish physical Bluetooth compatibility or accuracy.
 
+### Motor positioning gate
+
+Servo uses user-configured bounds relative to an attachment-local virtual
+zero. The node-poweredup `TachoMotor` path uses `rotateByDegrees` deltas between
+completed requests. The `AbsoluteMotor` path captures the encoder coordinate
+at activation (rotation mode 2, not absolute sensor mode 3) and offsets each
+`gotoAngle` target by that coordinate. Requests are also clamped to the
+library's non-wrapping command range. Neither path displays
+measured position or probes mechanical stops. WeDo 2.0 is excluded because
+the library rejects both angle command APIs on that hub.
+
+The provider arbitrates speed and angle requests per attachment. Cancellation,
+unacknowledged angle commands, continuous Speed commands, disconnection,
+rebinding and bound changes invalidate virtual zero.
+
+Arrows offer Step on Servo-capable motors or when a verified `PositionDriver`
+provides a finite step range. The verified driver uses its own feedback and
+bounds. Otherwise Step prefers `rotateByDegrees`; on absolute-only motors, it
+reads the encoder before each step and clamps the target to `gotoAngle`'s
+non-wrapping command range. Neither Servo capability nor that command range
+verifies mechanical travel or provides live position tracking.
+
 ## Releases and GitHub Pages
 
 `main` is the default V2 branch; `v2` retains the V2 development history.

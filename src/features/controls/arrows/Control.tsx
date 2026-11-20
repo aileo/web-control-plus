@@ -5,9 +5,10 @@ import ArrowDownward from '@mui/icons-material/ArrowDownward';
 import ArrowForward from '@mui/icons-material/ArrowForward';
 import ArrowBack from '@mui/icons-material/ArrowBack';
 import StopIcon from '@mui/icons-material/Stop';
-import { useMotorControl } from '../../../core/hooks';
+import { useMotorControl, usePositionControl } from '../../../core/hooks';
 import { legoColors } from '../../../theme/lego';
 import Error from '../shared/Error';
+import useServoRelease from '../shared/useServoRelease';
 import type { ControlOf } from '../../../core/types';
 
 // Render the directional buttons for a motor control.
@@ -17,6 +18,7 @@ export function ArrowsFace({
   runSpeed = 100,
   stopOnRelease = true,
   preview = false,
+  servo = false,
   available = true,
   getButtonProps,
 }: {
@@ -25,6 +27,7 @@ export function ArrowsFace({
   runSpeed?: number;
   stopOnRelease?: boolean;
   preview?: boolean;
+  servo?: boolean;
   available?: boolean;
   getButtonProps?: (
     value: number
@@ -66,7 +69,8 @@ export function ArrowsFace({
             ? 'action.disabledBackground'
             : legoColors.red;
         else if (speed * value > 0) background = 'success.dark';
-        const action = stopOnRelease ? 'Hold to go' : 'Go';
+        let action = stopOnRelease ? 'Hold to go' : 'Go';
+        if (servo) action = 'Move to';
         const face = (
           <Box
             component={preview ? 'span' : 'button'}
@@ -130,7 +134,9 @@ export function ArrowsFace({
             disableInteractive
             key={label}
             title={
-              value === 0 ? 'Stop motor' : `${action} ${label.toLowerCase()}`
+              value === 0
+                ? 'Stop motor'
+                : `${action} ${label.toLowerCase()}${servo ? ' endpoint' : ''}`
             }
           >
             {face}
@@ -141,8 +147,7 @@ export function ArrowsFace({
   );
 }
 
-// Render the configured directional motor control.
-function Arrows({ control }: { control: ControlOf<'arrows'> }) {
+function SpeedArrows({ control }: { control: ControlOf<'arrows'> }) {
   const { speed, command, error, available, connectionId } = useMotorControl(
     control.id
   );
@@ -291,4 +296,110 @@ function Arrows({ control }: { control: ControlOf<'arrows'> }) {
   );
 }
 
-export default Arrows;
+function ServoArrows({ control }: { control: ControlOf<'arrows'> }) {
+  const {
+    state,
+    reference,
+    available,
+    ready,
+    move,
+    center,
+    step,
+    stop,
+    error,
+  } = usePositionControl(control.id, true);
+  const isStep = control.options.mode === 'step';
+  const autoReturn = !isStep && control.options.autoReturnToCenter;
+  const release = useServoRelease(autoReturn, reference, center);
+  const activate = (value: number) => {
+    if (value === 0) {
+      release.clear();
+      void stop();
+    } else if (isStep) void step(value < 0 ? -1 : 1);
+    else void move(value < 0 ? 0 : 1);
+  };
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Box sx={{ flex: 1, minHeight: 0 }}>
+        <ArrowsFace
+          vertical={control.w < control.h}
+          servo
+          stopOnRelease={false}
+          available={available}
+          getButtonProps={(value) => ({
+            disabled:
+              value === 0 ? !available : !ready && !(autoReturn && reference),
+            'aria-disabled': value !== 0 && !ready ? true : undefined,
+            onClick: (event) => {
+              if (!autoReturn || value === 0) activate(value);
+              else if (ready && event.detail === 0) {
+                activate(value);
+                void center();
+              }
+            },
+            onPointerDown: (event) => {
+              if (
+                !autoReturn ||
+                value === 0 ||
+                !ready ||
+                event.button !== 0 ||
+                !event.isPrimary ||
+                !release.begin(event.pointerId)
+              )
+                return;
+              event.currentTarget.setPointerCapture?.(event.pointerId);
+              activate(value);
+            },
+            onPointerUp: (event) => {
+              if (value !== 0) release.release(event.pointerId);
+            },
+            onPointerCancel: (event) => release.cancel(event.pointerId),
+            onLostPointerCapture: (event) => release.cancel(event.pointerId),
+            onBlur: release.clear,
+            onKeyDown: (event) => {
+              if (value === 0 || ![' ', 'Enter'].includes(event.key)) return;
+              event.preventDefault();
+              if (
+                !event.repeat &&
+                ready &&
+                (!autoReturn || release.begin(event.key))
+              )
+                activate(value);
+            },
+            onKeyUp: (event) => {
+              if (value !== 0 && [' ', 'Enter'].includes(event.key)) {
+                event.preventDefault();
+                release.release(event.key);
+              }
+            },
+          })}
+        />
+      </Box>
+      {!isStep && state?.target != null && (
+        <Typography variant="caption">Requested: {state.target}°</Typography>
+      )}
+      {!isStep &&
+        state &&
+        state.target == null &&
+        !state.active &&
+        available &&
+        !error && (
+          <Typography variant="caption">
+            Select Servo again to reset zero
+          </Typography>
+        )}
+      {!available && (
+        <Typography variant="caption">Positioning unavailable</Typography>
+      )}
+      <Error error={error} />
+    </Box>
+  );
+}
+
+export default function Arrows({ control }: { control: ControlOf<'arrows'> }) {
+  return control.options.mode !== 'speed' ? (
+    <ServoArrows control={control} />
+  ) : (
+    <SpeedArrows control={control} />
+  );
+}

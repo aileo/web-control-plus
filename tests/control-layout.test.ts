@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { lego, loadSource } from './helpers/controls.ts';
 import { present } from './helpers/dom.ts';
 
-const definitions = loadSource('core/controlTypes');
+const definitions = loadSource('core/controls');
 const layout = loadSource('core/control-layout');
 const { controlTypes, getControlTypes, controlOptions } = definitions;
 const { canPlace, findSpace, snapSize } = layout;

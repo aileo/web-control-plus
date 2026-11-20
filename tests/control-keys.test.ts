@@ -14,11 +14,12 @@ import {
   pointer,
   button,
   visibleText,
+  lego,
 } from './helpers/controls.ts';
 
 const Grid = loadSource('components/modules/grid/Grid').default;
 const Modal = loadSource('components/Modal').default;
-const { normalizeShortcutKey } = loadSource('core/controlTypes');
+const { normalizeShortcutKey } = loadSource('core/controls');
 const render = () =>
   React.createElement(
     React.Fragment,
@@ -93,6 +94,7 @@ for (const reverseRotation of [false, true]) {
     hub.devices.A.setSpeed = async (speed) => {
       hub.devices.A.speeds.push([speed]);
       if (Math.abs(speed) === 10) await pending;
+      return lego.CONSTS.CommandFeedback.EXECUTION_COMPLETED;
     };
     await press('q');
     await press('w');

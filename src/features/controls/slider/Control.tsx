@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Box } from '@mui/material';
-import { useMotorControl } from '../../../core/hooks';
+import { Box, Typography } from '@mui/material';
+import { useMotorControl, usePositionControl } from '../../../core/hooks';
 import Error from '../shared/Error';
+import useServoRelease from '../shared/useServoRelease';
 import type { ControlOf } from '../../../core/types';
 import SliderFace, { RangeInput } from '../shared/SliderFace';
 
@@ -17,8 +18,7 @@ const speedKeys = [
   'PageDown',
 ];
 
-// Render a motor slider with pointer and keyboard command handling.
-function Slider({ control }: { control: ControlOf<'slider'> }) {
+function SpeedSlider({ control }: { control: ControlOf<'slider'> }) {
   const { speed, command, error, available, connectionId } = useMotorControl(
     control.id
   );
@@ -151,4 +151,98 @@ function Slider({ control }: { control: ControlOf<'slider'> }) {
   );
 }
 
-export default Slider;
+function ServoSlider({ control }: { control: ControlOf<'slider'> }) {
+  const { state, reference, available, ready, move, center, error } =
+    usePositionControl(control.id, true);
+  const autoReturn = control.options.autoReturnToCenter;
+  const release = useServoRelease(autoReturn, reference, center);
+  const { servoMin, servoMax } = control.options;
+  const fraction =
+    state?.target != null &&
+    typeof servoMin === 'number' &&
+    typeof servoMax === 'number'
+      ? (state.target - servoMin) / (servoMax - servoMin)
+      : 0.5;
+  const target = Math.round(Math.max(0, Math.min(1, fraction)) * 100);
+  const vertical = control.w < control.h;
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+      <Box sx={{ flex: 1, minHeight: handleHeight }}>
+        <SliderFace
+          speed={target}
+          min={0}
+          max={100}
+          vertical={vertical}
+          input={
+            <RangeInput
+              aria-label="Servo target position"
+              min={0}
+              max={100}
+              vertical={vertical}
+              value={target}
+              disabled={!ready && !(autoReturn && reference)}
+              aria-valuetext={
+                state?.target == null
+                  ? 'Not active'
+                  : `Requested ${state.target} degrees`
+              }
+              onChange={(event) => {
+                if (ready) void move(Number(event.target.value) / 100);
+              }}
+              onPointerDown={(event: React.PointerEvent<HTMLInputElement>) => {
+                if (
+                  ready &&
+                  event.button === 0 &&
+                  event.isPrimary &&
+                  release.begin(event.pointerId)
+                )
+                  event.currentTarget.setPointerCapture?.(event.pointerId);
+              }}
+              onPointerUp={(event: React.PointerEvent<HTMLInputElement>) =>
+                release.release(event.pointerId)
+              }
+              onPointerCancel={(event: React.PointerEvent<HTMLInputElement>) =>
+                release.cancel(event.pointerId)
+              }
+              onLostPointerCapture={(
+                event: React.PointerEvent<HTMLInputElement>
+              ) => release.cancel(event.pointerId)}
+              onKeyDown={(event: React.KeyboardEvent<HTMLInputElement>) => {
+                if (ready && speedKeys.includes(event.key))
+                  release.begin(event.key);
+              }}
+              onKeyUp={(event: React.KeyboardEvent<HTMLInputElement>) =>
+                release.release(event.key)
+              }
+              onBlur={release.clear}
+            />
+          }
+        />
+      </Box>
+      {state?.target != null && (
+        <Typography variant="caption">Requested: {state.target}°</Typography>
+      )}
+      {state &&
+        state.target == null &&
+        !state.active &&
+        available &&
+        !error && (
+          <Typography variant="caption">
+            Select Servo again to reset zero
+          </Typography>
+        )}
+      {!available && (
+        <Typography variant="caption">Servo unavailable</Typography>
+      )}
+      <Error error={error} />
+    </Box>
+  );
+}
+
+export default function Slider({ control }: { control: ControlOf<'slider'> }) {
+  return control.options.mode === 'servo' ? (
+    <ServoSlider control={control} />
+  ) : (
+    <SpeedSlider control={control} />
+  );
+}

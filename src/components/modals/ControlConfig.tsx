@@ -7,14 +7,24 @@ import {
   DialogContent,
   DialogTitle,
   TextField,
+  Typography,
 } from '@mui/material';
 import ControlConfigFields from '../../features/controls/ConfigFields';
 import ShortcutFields from '../../features/controls/shared/ShortcutFields';
+import ServoBounds from '../../features/controls/shared/ServoBounds';
 import {
   useControl,
+  useDevice,
+  usePositionControl,
   useRemoveControl,
   useUpdateControl,
 } from '../../core/hooks';
+import {
+  motorPositionCapabilities,
+  stepAngleRange,
+  supportsServo,
+  supportsStep,
+} from '../../core/controls';
 import type { DialogBusyProps } from '../types';
 import useModalAction from '../../core/hooks/useModalAction';
 
@@ -33,6 +43,9 @@ function ControlConfig({
   id: string;
 }) {
   const control = useControl(id);
+  const device = useDevice(control?.uuid, control?.port);
+  const stepRange = stepAngleRange(device);
+  const position = usePositionControl(id);
   const update = useUpdateControl();
   const remove = useRemoveControl();
   const { close, error, run } = useModalAction(onBusyChange);
@@ -61,6 +74,8 @@ function ControlConfig({
       ...previous,
       options: { ...previous.options, [key]: value },
     }));
+  const servoAvailable = supportsServo(device);
+  const stepAvailable = control.type === 'arrows' && supportsStep(device);
   return (
     <Box
       component="form"
@@ -88,18 +103,102 @@ function ControlConfig({
           }
           slotProps={{ htmlInput: { maxLength: 80 } }}
         />
-        <ControlConfigFields
-          type={control.type}
-          options={draft.options}
-          busy={busy}
-          setOption={setOption}
-        />
-        <ShortcutFields
-          type={control.type}
-          options={draft.options}
-          busy={busy}
-          setOption={setOption}
-        />
+        {(control.type === 'slider' || control.type === 'arrows') &&
+          (servoAvailable ||
+            stepAvailable ||
+            control.options.mode !== 'speed') && (
+            <TextField
+              select
+              label="Mode"
+              value={draft.options.mode}
+              disabled={busy}
+              slotProps={{ select: { native: true } }}
+              onChange={(event) => setOption('mode', event.target.value)}
+            >
+              <option value="speed">Speed</option>
+              {(servoAvailable || control.options.mode === 'servo') && (
+                <option value="servo">Servo</option>
+              )}
+              {control.type === 'arrows' &&
+                (stepAvailable || control.options.mode === 'step') && (
+                  <option value="step">Step</option>
+                )}
+            </TextField>
+          )}
+        {control.type === 'arrows' && draft.options.mode === 'step' && (
+          <TextField
+            label="Step angle (degrees)"
+            type="number"
+            value={draft.options.angle}
+            required
+            disabled={busy}
+            onChange={(event) =>
+              setOption(
+                'angle',
+                event.target.value === '' ? '' : Number(event.target.value)
+              )
+            }
+            slotProps={{
+              htmlInput: {
+                min: stepRange?.minDegrees,
+                max: stepRange?.maxDegrees,
+                step: 'any',
+              },
+            }}
+          />
+        )}
+        {(control.type === 'slider' || control.type === 'arrows') &&
+          draft.options.mode === 'servo' && (
+            <ServoBounds
+              min={draft.options.servoMin}
+              max={draft.options.servoMax}
+              autoReturnToCenter={draft.options.autoReturnToCenter === true}
+              busy={busy}
+              setOption={setOption}
+            />
+          )}
+        {control.type === 'arrows' &&
+          (draft.options.mode === 'servo' || draft.options.mode === 'step') && (
+            <>
+              {device?.positionDriver &&
+              motorPositionCapabilities(device).finiteAngle &&
+              draft.options.mode === 'step' ? (
+                <Typography variant="caption">
+                  Verified absolute angle range:{' '}
+                  {device.positionDriver.absoluteAngle.min} to{' '}
+                  {device.positionDriver.absoluteAngle.max} degrees.
+                </Typography>
+              ) : (
+                draft.options.mode === 'step' &&
+                !stepAvailable && (
+                  <Alert severity="info">
+                    Step positioning is unavailable on this device.
+                  </Alert>
+                )
+              )}
+              {position.error && (
+                <Alert severity="error">{String(position.error)}</Alert>
+              )}
+            </>
+          )}
+        {((control.type !== 'slider' && control.type !== 'arrows') ||
+          draft.options.mode === 'speed') && (
+          <ControlConfigFields
+            type={control.type}
+            options={draft.options}
+            busy={busy}
+            setOption={setOption}
+          />
+        )}
+        {(draft.options.mode === undefined ||
+          draft.options.mode === 'speed') && (
+          <ShortcutFields
+            type={control.type}
+            options={draft.options}
+            busy={busy}
+            setOption={setOption}
+          />
+        )}
       </DialogContent>
       <DialogActions sx={{ flexWrap: 'wrap' }}>
         <Button

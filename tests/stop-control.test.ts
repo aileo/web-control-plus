@@ -12,6 +12,7 @@ import {
   click,
   button,
   DeviceType,
+  lego,
 } from './helpers/controls.ts';
 
 const Grid = loadSource('components/modules/grid/Grid').default;
@@ -208,7 +209,7 @@ test('Stop permits only zero and supersedes older queued motor commands', async 
       ? new Promise<void>((resolve) => {
           finish = resolve;
         })
-      : Promise.resolve();
+      : Promise.resolve(lego.CONSTS.CommandFeedback.EXECUTION_COMPLETED);
   };
   let running: Promise<unknown> | undefined;
   await act(async () => {

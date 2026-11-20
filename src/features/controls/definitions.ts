@@ -4,6 +4,7 @@ import type {
   DeviceInfo,
   LightControlType,
 } from '../../core/types';
+import { hasAbsoluteAngle } from '../../core/position-motor';
 import type {
   ControlDefinitions,
   ControlProposal,
@@ -75,6 +76,62 @@ export function getControlTypes(
         controlTypes[type];
       return { type, label, defaults, motor, devices, sizes, mode };
     });
+}
+
+// Only an explicitly verified adapter may enable position controls.
+export function motorPositionCapabilities(device?: DeviceInfo | null) {
+  const verified = Boolean(
+    device?.connected && hasAbsoluteAngle(device.positionDriver)
+  );
+  const finiteAngle = device?.positionDriver?.finiteAngle;
+  return {
+    absolutePosition: verified,
+    finiteAngle: Boolean(
+      verified &&
+      finiteAngle &&
+      Number.isFinite(finiteAngle.minDegrees) &&
+      Number.isFinite(finiteAngle.maxDegrees) &&
+      finiteAngle.minDegrees > 0 &&
+      finiteAngle.maxDegrees >= finiteAngle.minDegrees
+    ),
+    positionFeedback: verified,
+    safeStop: verified,
+  };
+}
+
+export function supportsServo(device?: DeviceInfo | null): boolean {
+  return Boolean(device?.connected && device.servoDriver);
+}
+
+export function supportsStep(device?: DeviceInfo | null): boolean {
+  return supportsServo(device) || motorPositionCapabilities(device).finiteAngle;
+}
+
+export function stepAngleRange(device?: DeviceInfo | null) {
+  if (motorPositionCapabilities(device).finiteAngle)
+    return device?.positionDriver?.finiteAngle;
+  if (supportsServo(device)) return { minDegrees: 1, maxDegrees: 0x7fffffff };
+  return undefined;
+}
+
+type MotorMode = 'speed' | 'servo' | 'step';
+type ControlChoice = ControlProposal & { motorMode?: MotorMode };
+
+export function getControlChoices(device?: DeviceInfo | null): ControlChoice[] {
+  return getControlTypes(device).flatMap<ControlChoice>((definition) => {
+    if (definition.type !== 'slider' && definition.type !== 'arrows')
+      return [{ ...definition }];
+    const modes: MotorMode[] = ['speed'];
+    if (supportsServo(device)) modes.push('servo');
+    if (definition.type === 'arrows' && supportsStep(device))
+      modes.push('step');
+    const labels = { speed: 'Speed', servo: 'Servo', step: 'Step' };
+    return modes.map((motorMode) => ({
+      ...definition,
+      motorMode,
+      label: `${definition.label} - ${labels[motorMode]}`,
+    }));
+  });
 }
 
 // Resolve the direction multiplier applied by a control's motor settings.

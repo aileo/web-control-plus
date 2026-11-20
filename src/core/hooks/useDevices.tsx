@@ -13,6 +13,8 @@ import type { DeviceInfo, DeviceEvents, RawDevice, RawHub } from '../types';
 import type { ProjectDevice } from '../project';
 import { ledCapabilities, lightSelection } from '../leds';
 import type { LightChanges } from '../leds';
+import type { PositionDriver } from '../position-motor';
+import makeServoDriver from '../servo-driver';
 import logger from '../../utils/logger';
 import { useHubs, useSetHubColor } from './useHubs';
 import contextHook from './context-hook';
@@ -91,7 +93,15 @@ function hasPortName(port: string | undefined): port is string {
 }
 
 // Track device sessions and expose device telemetry and commands to consumers.
-export function DevicesProvider({ children }: PropsWithChildren) {
+export function DevicesProvider({
+  children,
+  positionDriverFactory,
+}: PropsWithChildren<{
+  positionDriverFactory?: (
+    hub: RawHub,
+    device: RawDevice
+  ) => PositionDriver | undefined;
+}>) {
   const hubs = useHubs();
   const setHubColor = useSetHubColor();
   const hubColorAction = useRef(setHubColor);
@@ -280,6 +290,8 @@ export function DevicesProvider({ children }: PropsWithChildren) {
               connected: false,
               events: {},
               commands: {},
+              positionDriver: undefined,
+              servoDriver: undefined,
             }
           : undefined
       );
@@ -353,6 +365,22 @@ export function DevicesProvider({ children }: PropsWithChildren) {
           device.on('tilt', entry.listeners.tilt);
         }
         session.entries.set(port, entry);
+        const positionDriver = positionDriverFactory?.(hub, device);
+        const servoDriver = makeServoDriver(
+          hub,
+          device,
+          () =>
+            isCurrent() &&
+            hub.connected &&
+            session.entries.get(port) === entry &&
+            hub.getDeviceAtPort(port) === device,
+          () => {
+            entry.motorActive = true;
+          },
+          (mode) => {
+            entry.modes.add(mode);
+          }
+        );
         updateDevice(uuid, port, () => ({
           uuid,
           mac: lego.identity(hub),
@@ -363,12 +391,19 @@ export function DevicesProvider({ children }: PropsWithChildren) {
           connected: true,
           events: {},
           commands: {},
+          positionDriver,
+          servoDriver,
         }));
         logger.debug('Hub device attached', {
           hub: hub.name || 'Unnamed hub',
           port,
           hubType: hub.type,
           deviceType: device.type,
+          gotoAngleExposed:
+            'gotoAngle' in device && typeof device.gotoAngle === 'function',
+          relativeRotationExposed:
+            'rotateByDegrees' in device &&
+            typeof device.rotateByDegrees === 'function',
         });
         if (device.type === CONSTS.DeviceType.HUB_LED) {
           const { rgb } = lego.colorFromText(uuid);
@@ -433,7 +468,14 @@ export function DevicesProvider({ children }: PropsWithChildren) {
           const ports = new Map(
             [...(previous.get(uuid) || [])].map(([port, info]) => [
               port,
-              { ...info, connected: false, events: {}, commands: {} },
+              {
+                ...info,
+                connected: false,
+                events: {},
+                commands: {},
+                positionDriver: undefined,
+                servoDriver: undefined,
+              },
             ])
           );
           return new Map(previous).set(uuid, ports);
@@ -479,7 +521,15 @@ export function DevicesProvider({ children }: PropsWithChildren) {
       if ([...previous.keys()].every((uuid) => hubs.has(uuid))) return previous;
       return new Map([...previous].filter(([uuid]) => hubs.has(uuid)));
     });
-  }, [hubs, release, reportError, stop, updateDevice, runLight]);
+  }, [
+    hubs,
+    release,
+    reportError,
+    stop,
+    updateDevice,
+    runLight,
+    positionDriverFactory,
+  ]);
 
   const actions = useMemo<
     Pick<
@@ -609,7 +659,42 @@ export function DevicesProvider({ children }: PropsWithChildren) {
           entry.commandVersion += 1;
           const version = entry.commandVersion;
           if (value !== 0) entry.motorActive = true;
-          await command(value);
+          const feedback = await command(value);
+          if (value === 0) {
+            switch (feedback) {
+              case CONSTS.CommandFeedback.EXECUTION_COMPLETED:
+                break;
+              case CONSTS.CommandFeedback.TRANSMISSION_DISCARDED:
+              case CONSTS.CommandFeedback.EXECUTION_DISCARDED:
+              case CONSTS.CommandFeedback.FEEDBACK_MISSING:
+                throw new Error(
+                  `Motor stop was not confirmed (${
+                    CONSTS.CommandFeedback[feedback]
+                  })`
+                );
+              case CONSTS.CommandFeedback.FEEDBACK_DISABLED:
+                throw new Error(
+                  'Motor stop was not confirmed (FEEDBACK_DISABLED)'
+                );
+              case CONSTS.CommandFeedback.TRANSMISSION_PENDING:
+              case CONSTS.CommandFeedback.TRANSMISSION_BUSY:
+              case CONSTS.CommandFeedback.EXECUTION_PENDING:
+              case CONSTS.CommandFeedback.EXECUTION_BUSY:
+                throw new Error(
+                  `Motor stop is still pending (${
+                    CONSTS.CommandFeedback[feedback]
+                  })`
+                );
+              case undefined:
+                throw new Error(
+                  'Motor stop was not confirmed (FEEDBACK_MISSING)'
+                );
+              default:
+                throw new Error(
+                  'Motor stop was not confirmed (unknown feedback)'
+                );
+            }
+          }
           if (isCurrent() && version === entry.commandVersion) {
             if (value === 0) entry.motorActive = false;
             updateDevice(uuid, port, (previous) =>

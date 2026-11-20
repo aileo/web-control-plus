@@ -43,6 +43,7 @@ function Control({
   const { label, icon: Icon } = getDeviceType(device?.type.text);
   const waiting =
     controlTypes[control.type].mode && subscription?.state !== 'ready';
+  const modeLabels = { speed: 'Speed', servo: 'Servo', step: 'Step' };
   let content: React.ReactNode = null;
   if (available && device)
     content = (
@@ -156,6 +157,15 @@ function Control({
       <Box
         sx={{ display: 'flex', alignItems: 'center', minWidth: 0, pl: 0.75 }}
       >
+        {(control.type === 'slider' || control.type === 'arrows') && (
+          <Typography
+            data-motor-mode={control.options.mode}
+            variant="caption"
+            sx={{ fontSize: 10, mr: 0.5 }}
+          >
+            {modeLabels[control.options.mode]}
+          </Typography>
+        )}
         <Icon sx={{ fontSize: 12, mr: 0.5, flexShrink: 0 }} />
         <Tooltip
           title={`${hub?.name || control.uuid} - ${control.port} - ${label}`}
