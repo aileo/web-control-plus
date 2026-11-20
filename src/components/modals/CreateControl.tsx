@@ -15,7 +15,7 @@ import {
   useDevice,
   useHub,
 } from '../../core/hooks';
-import { getControlChoices } from '../../core/controls';
+import { getControlChoices, stepAngleRange } from '../../core/controls';
 import { findSpace } from '../../core/control-layout';
 import { getDeviceType } from '../../utils/device-types';
 import { legoColors } from '../../theme/lego';
@@ -63,6 +63,7 @@ function CreateControl({
   port: string;
 }) {
   const device = useDevice(uuid, port);
+  const stepRange = stepAngleRange(device);
   const hub = useHub(uuid);
   const controls = useBoardOccupancy();
   const add = useAddControl();
@@ -70,7 +71,7 @@ function CreateControl({
   const proposals = getControlChoices(device);
   const [selection, setSelection] = useState<{
     type: ControlType;
-    motorMode?: 'speed' | 'servo';
+    motorMode?: 'speed' | 'servo' | 'step';
   } | null>(null);
   const type = selection?.type ?? null;
   const definition = proposals.find(
@@ -93,7 +94,16 @@ function CreateControl({
           port,
           ...size,
           ...(selection?.motorMode && {
-            options: { mode: selection.motorMode },
+            options: {
+              mode: selection.motorMode,
+              ...(selection.motorMode === 'step' &&
+                stepRange && {
+                  angle: Math.max(
+                    stepRange.minDegrees,
+                    Math.min(15, stepRange.maxDegrees)
+                  ),
+                }),
+            },
           }),
         })
       );

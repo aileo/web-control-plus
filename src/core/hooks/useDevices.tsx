@@ -14,6 +14,7 @@ import type { ProjectDevice } from '../project';
 import { ledCapabilities, lightSelection } from '../leds';
 import type { LightChanges } from '../leds';
 import type { PositionDriver } from '../position-motor';
+import makeServoDriver from '../servo-driver';
 import logger from '../../utils/logger';
 import { useHubs, useSetHubColor } from './useHubs';
 import contextHook from './context-hook';
@@ -290,6 +291,7 @@ export function DevicesProvider({
               events: {},
               commands: {},
               positionDriver: undefined,
+              servoDriver: undefined,
             }
           : undefined
       );
@@ -363,6 +365,22 @@ export function DevicesProvider({
           device.on('tilt', entry.listeners.tilt);
         }
         session.entries.set(port, entry);
+        const positionDriver = positionDriverFactory?.(hub, device);
+        const servoDriver = makeServoDriver(
+          hub,
+          device,
+          () =>
+            isCurrent() &&
+            hub.connected &&
+            session.entries.get(port) === entry &&
+            hub.getDeviceAtPort(port) === device,
+          () => {
+            entry.motorActive = true;
+          },
+          (mode) => {
+            entry.modes.add(mode);
+          }
+        );
         updateDevice(uuid, port, () => ({
           uuid,
           mac: lego.identity(hub),
@@ -373,13 +391,19 @@ export function DevicesProvider({
           connected: true,
           events: {},
           commands: {},
-          positionDriver: positionDriverFactory?.(hub, device),
+          positionDriver,
+          servoDriver,
         }));
         logger.debug('Hub device attached', {
           hub: hub.name || 'Unnamed hub',
           port,
           hubType: hub.type,
           deviceType: device.type,
+          gotoAngleExposed:
+            'gotoAngle' in device && typeof device.gotoAngle === 'function',
+          relativeRotationExposed:
+            'rotateByDegrees' in device &&
+            typeof device.rotateByDegrees === 'function',
         });
         if (device.type === CONSTS.DeviceType.HUB_LED) {
           const { rgb } = lego.colorFromText(uuid);
@@ -450,6 +474,7 @@ export function DevicesProvider({
                 events: {},
                 commands: {},
                 positionDriver: undefined,
+                servoDriver: undefined,
               },
             ])
           );

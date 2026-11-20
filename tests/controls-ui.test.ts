@@ -330,7 +330,10 @@ test('device activation closes the popup; dialogs create/configure/remove with n
   );
   await act(async () => {
     await assert.rejects(
-      () => view.api.update(control.id, { options: { mode: 'servo' } }),
+      () =>
+        view.api.update(control.id, {
+          options: { mode: 'servo', servoMin: -20, servoMax: 20 },
+        }),
       /not available/
     );
   });

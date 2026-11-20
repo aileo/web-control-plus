@@ -1,5 +1,6 @@
 import type { Device } from 'node-poweredup/dist/devices/device.js';
 import type { PositionDriver } from '../position-motor';
+import type { ServoDriver } from '../virtual-servo';
 
 export type DeviceTypeInfo = {
   num: number;
@@ -36,6 +37,7 @@ export type DeviceInfo = {
   events: DeviceEvents;
   commands: DeviceCommands;
   positionDriver?: PositionDriver;
+  servoDriver?: ServoDriver;
   lightPending?: boolean;
   requestedBrightness?: number;
   lightError?: unknown;
@@ -43,6 +45,7 @@ export type DeviceInfo = {
 };
 
 type RawDeviceEvents = {
+  rotate: (event: { degrees: number }) => void;
   distance: (event: { distance: number }) => void;
   color: (event: { color: number }) => void;
   colorAndDistance: (event: { color: number; distance: number }) => void;
@@ -66,6 +69,17 @@ export type RawDevice = Pick<
   once: RawEventMethods<RawDeviceEvents>['once'];
   removeListener: RawEventMethods<RawDeviceEvents>['removeListener'];
   values: Record<string, unknown>;
+  requestUpdate?: () => void;
+  gotoAngle?: (
+    angle: number,
+    speed: number,
+    interrupt: boolean
+  ) => Promise<number> | undefined;
+  rotateByDegrees?: (
+    degrees: number,
+    speed: number,
+    interrupt: boolean
+  ) => Promise<number> | undefined;
   writeDirect: (
     mode: number,
     data: Buffer,

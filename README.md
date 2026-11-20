@@ -108,9 +108,24 @@ Home and End select -100% and +100%. Positive speed is at the top or right;
 negative speed is at the bottom or left.
 Momentary sliders also stop on cancellation or focus loss.
 
-Slider and arrow tiles currently offer **Speed** mode only. Calibrated Servo
-mode is not available until positioning, endpoint detection, and stopping have
-been verified on a supported motor and hub.
+On supported angle-capable motors, slider and arrow tiles also offer **Servo**.
+The default bounds are −180° to +180° and can be edited in Control settings.
+Servo tiles for the same motor attachment share one virtual zero and requested
+angle. Each tile uses its own bounds for the targets it sends.
+In Servo settings, enable **Auto return to center** to request 0° when you
+release an arrow or slider. It is off by default.
+To interrupt a Servo slider move, use **Stop all motors** in the footer.
+Place the motor at the intended zero before choosing **Servo**. The requested
+angle starts at 0°, without sending a motion command or seeking mechanical stops.
+The tile shows the requested angle, not a measured position. The bounds limit
+requests, not actual motion; choose bounds that are safe for the model. If a
+move is interrupted or another control drives the motor in Speed mode, switch
+the tile out of Servo and back to set a fresh zero. Reconnecting, rebinding, or
+editing bounds also sets a fresh zero without requesting an angle.
+Absolute motors may reach less than the configured range to avoid wraparound.
+**Step** is available on Servo-capable motors and verified Step adapters.
+Each press moves by the configured angle. When only an absolute angle command
+is available, Step uses encoder feedback and never wraps past the command range.
 
 With Reverse rotation enabled, displayed +40% sends -40% to the motor.
 Other controls on that motor keep their own direction settings; normal and

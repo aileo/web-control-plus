@@ -14,7 +14,10 @@ import {
   isCompatible,
   isLightControlType,
   motorDirection,
+  motorPositionCapabilities,
+  stepAngleRange,
   supportsServo,
+  supportsStep,
 } from '../controls';
 import {
   boardOccupancy,
@@ -45,6 +48,8 @@ import {
 import logger from '../../utils/logger';
 import { ledCapabilities, type LightChanges } from '../leds';
 import PositionMotor, { type PositionState } from '../position-motor';
+import VirtualServo from '../virtual-servo';
+import { validServoBounds } from '../servo-bounds';
 import contextHook from './context-hook';
 import {
   useHubs,
@@ -144,9 +149,20 @@ type ControlLifecycle = {
   tickets: Map<string, number>;
   stops: Map<string, { ticket: number; pending: Promise<void | undefined> }>;
   activeMotors: Map<string, ControlTarget>;
-  positionMotors: Map<string, { target: ControlTarget; motor: PositionMotor }>;
-  calibrating: Map<string, object>;
-  positionRequests: Map<string, object>;
+  positionMotors: Map<
+    string,
+    { target: ControlTarget; motor: PositionMotor | VirtualServo }
+  >;
+  positionRequests: Map<
+    string,
+    {
+      id: string;
+      target: ControlTarget;
+      activating: boolean;
+      moving: boolean;
+      center: boolean;
+    }
+  >;
   intendedSpeeds: Map<
     string,
     { target: ControlTarget; speed: number; owner?: object }
@@ -193,8 +209,9 @@ type ControlContextValue = {
     speed: number,
     expected?: ExpectedMotorTarget
   ) => Promise<void | undefined>;
-  calibrate: (id: string) => Promise<void>;
-  position: (id: string, fraction: number) => Promise<void>;
+  position: (id: string, fraction: number | 'center') => Promise<void>;
+  activateServo: (id: string) => Promise<void>;
+  step: (id: string, direction: number) => Promise<void>;
   light: (
     id: string,
     changes: LightChanges,
@@ -337,7 +354,6 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     stops: new Map(),
     activeMotors: new Map(),
     positionMotors: new Map(),
-    calibrating: new Map(),
     positionRequests: new Map(),
     intendedSpeeds: new Map(),
     keyPresses: new Map(),
@@ -517,7 +533,6 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       const key = connectionKey(target);
       const positionPending = current.positionRequests.delete(key);
       if (speed === 0) {
-        current.calibrating.delete(key);
         current.keyPresses.forEach((entries, token) => {
           current.keyPresses.set(
             token,
@@ -538,13 +553,11 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       const ticket = (current.tickets.get(key) || 0) + 1;
       current.tickets.set(key, ticket);
       // Interrupt position work immediately, rather than queueing behind it.
-      const positionStop = current.positionMotors
-        .get(key)
-        ?.motor.stop()
-        .then(
-          () => null,
-          (cause: unknown) => ({ cause })
-        );
+      const motor = current.positionMotors.get(key)?.motor;
+      const positionStop = motor?.stop(speed !== 0).then(
+        () => null,
+        (cause: unknown) => ({ cause })
+      );
       current.intendedSpeeds.set(key, { target, speed, owner });
       if (current.mounted)
         setPendingSpeeds((previous) => new Map(previous).set(key, speed));
@@ -627,7 +640,6 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       stops: new Map(),
       activeMotors: new Map(),
       positionMotors: new Map(),
-      calibrating: new Map(),
       positionRequests: new Map(),
       intendedSpeeds: new Map(),
       keyPresses: new Map(),
@@ -636,9 +648,8 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     life.current = current;
     // Stop all active motors when the document is being hidden or closed.
     const stopMotors = () => {
-      current.positionRequests.forEach((_owner, key) => {
-        const target = current.positionMotors.get(key)?.target;
-        if (target) current.activeMotors.set(key, target);
+      current.positionRequests.forEach(({ target }, key) => {
+        current.activeMotors.set(key, target);
       });
       current.activeMotors.forEach((target, key) => {
         if (!targetIsCurrent(target)) current.activeMotors.delete(key);
@@ -704,7 +715,6 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       if (!targetIsCurrent(target)) {
         life.current.tickets.set(key, (life.current.tickets.get(key) || 0) + 1);
         life.current.positionMotors.delete(key);
-        life.current.calibrating.delete(key);
         life.current.positionRequests.delete(key);
         motor.dispose().catch(report);
         setPositionStates((previous) => {
@@ -744,8 +754,9 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       | 'remove'
       | 'replaceOfflineHub'
       | 'speed'
-      | 'calibrate'
       | 'position'
+      | 'activateServo'
+      | 'step'
       | 'light'
       | 'retry'
       | 'clearError'
@@ -859,6 +870,19 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       ) {
         throw new Error('Servo mode is not available on this device');
       }
+      if (validated.type === 'arrows' && validated.options.mode === 'step') {
+        const device = latest.current.devices
+          .get(validated.uuid)
+          ?.get(validated.port);
+        const capability = stepAngleRange(device);
+        if (!capability)
+          throw new Error('Step mode is not available on this device');
+        if (
+          validated.options.angle < capability.minDegrees ||
+          validated.options.angle > capability.maxDegrees
+        )
+          throw new Error('Step angle is outside the supported range');
+      }
       const boardId =
         boardsRef.current.find((board) => board.controlIds.includes(control.id))
           ?.id ?? selectedRef.current;
@@ -889,7 +913,10 @@ export function ControlsProvider({ children }: PropsWithChildren) {
     }
 
     // Stop a motor before changing or removing its control target.
-    async function stopBeforeChange(control: Control): Promise<void> {
+    async function stopBeforeChange(
+      control: Control,
+      onlyIfActive = false
+    ): Promise<void> {
       const device = latest.current.devices
         .get(control.uuid)
         ?.get(control.port);
@@ -899,8 +926,26 @@ export function ControlsProvider({ children }: PropsWithChildren) {
         isCompatible(control.type, device)
       ) {
         const target = getTarget(control);
-        await queueSpeed(target, 0);
         const key = connectionKey(target);
+        const { current } = life;
+        const sharedServo =
+          current.positionMotors.get(key)?.motor instanceof VirtualServo &&
+          [...records.current.values()].some(
+            (sibling) =>
+              sibling.id !== control.id &&
+              sibling.uuid === control.uuid &&
+              sibling.port === control.port &&
+              (sibling.type === 'arrows' || sibling.type === 'slider') &&
+              sibling.options.mode === 'servo'
+          );
+        if (
+          (!onlyIfActive && !sharedServo) ||
+          current.activeMotors.has(key) ||
+          current.motorQueues.has(key) ||
+          current.positionRequests.has(key)
+        )
+          await queueSpeed(target, 0);
+        if (sharedServo) return;
         const owned = life.current.positionMotors.get(key);
         if (owned) {
           life.current.positionMotors.delete(key);
@@ -918,10 +963,10 @@ export function ControlsProvider({ children }: PropsWithChildren) {
       const { current } = life;
       const key = connectionKey(target);
       const existing = current.positionMotors.get(key);
-      if (existing) return existing.motor;
+      if (existing?.motor instanceof PositionMotor) return existing.motor;
       const device = latest.current.devices.get(target.uuid)?.get(target.port);
       const driver = device?.positionDriver;
-      if (!driver || !driver.referenceValid())
+      if (!driver || !motorPositionCapabilities(device).finiteAngle)
         throw new Error('Positioning is not available');
       const motor = new PositionMotor(
         driver,
@@ -937,7 +982,6 @@ export function ControlsProvider({ children }: PropsWithChildren) {
           const owned = current.positionMotors.get(key);
           if (!owned) return;
           current.positionRequests.delete(key);
-          current.calibrating.delete(key);
           current.positionMotors.delete(key);
           owned.motor.dispose().catch(report);
           if (targetIsCurrent(target))
@@ -960,28 +1004,83 @@ export function ControlsProvider({ children }: PropsWithChildren) {
 
     async function runPosition(
       id: string,
-      operation: 'calibrate' | 'move',
-      fraction?: number
+      operation: 'activate' | 'move' | 'step',
+      fraction?: number | 'center'
     ): Promise<void> {
       const control = getControl(id);
       if (control.type !== 'slider' && control.type !== 'arrows')
         throw new Error('Not a position control');
-      if (control.options.mode !== 'servo')
+      if (operation === 'step') {
+        if (control.type !== 'arrows' || control.options.mode !== 'step')
+          throw new Error('Control is not in Step mode');
+        if (fraction !== -1 && fraction !== 1)
+          throw new Error('Invalid step direction');
+      } else if (control.options.mode !== 'servo')
         throw new Error('Control is not in Servo mode');
       if (life.current.locks.has(id)) throw new Error('Control is busy');
       if (pageIsHidden())
         throw new Error('Motor controls are paused while this page is hidden');
       const target = getTarget(control);
+      const device = latest.current.devices.get(target.uuid)?.get(target.port);
+      const verifiedStep =
+        operation === 'step' && motorPositionCapabilities(device).finiteAngle;
+      if (operation === 'step' && control.type === 'arrows') {
+        const range = stepAngleRange(device);
+        if (!range)
+          throw new Error('Step mode is not available on this device');
+        if (
+          control.options.angle < range.minDegrees ||
+          control.options.angle > range.maxDegrees
+        )
+          throw new Error('Step angle is outside the supported range');
+      }
       const key = connectionKey(target);
       const { current } = life;
-      if (current.calibrating.has(key))
-        throw new Error('Motor calibration is in progress');
-      const motor = positionMotor(target);
-      const stop = queueSpeed(target, 0, undefined, true);
+      const centering = operation === 'move' && fraction === 'center';
+      if (centering && !control.options.autoReturnToCenter) return;
+      const pending = current.positionRequests.get(key);
+      const existing = current.positionMotors.get(key)?.motor;
+      const servo = existing instanceof VirtualServo ? existing : undefined;
+      const { servoMin, servoMax } = control.options;
+      if (operation !== 'step' && !validServoBounds(servoMin, servoMax))
+        throw new Error('Configure valid Servo bounds first');
+      if (
+        operation === 'activate' &&
+        (servo?.hasReference || pending?.activating)
+      )
+        return;
+      if (pending) {
+        if (centering && pending.id === id && pending.moving)
+          pending.center = true;
+        if (operation === 'activate') throw new Error('Motor is busy');
+        return;
+      }
+      if (
+        operation === 'activate' &&
+        (current.motorQueues.has(key) || current.activeMotors.has(key))
+      )
+        throw new Error('Stop the motor before selecting Servo');
+      if (operation === 'activate' && existing) {
+        if (servo) return;
+        throw new Error('This motor already has a position control in use');
+      }
+      if (operation === 'move' && !servo?.hasReference)
+        throw new Error('Select Servo again to set virtual zero');
+      if (centering && servo?.lastMoveOwner !== id) return;
+      const stop =
+        operation === 'step'
+          ? queueSpeed(target, 0, undefined, true)
+          : Promise.resolve();
       const ticket = current.tickets.get(key);
-      const owner = {};
+      const owner = {
+        id,
+        target,
+        activating: operation === 'activate',
+        moving: operation === 'move' && !centering,
+        center: false,
+      };
+      const boardId = selectedRef.current;
       current.positionRequests.set(key, owner);
-      if (operation === 'calibrate') current.calibrating.set(key, owner);
       try {
         await stop;
         if (
@@ -991,14 +1090,115 @@ export function ControlsProvider({ children }: PropsWithChildren) {
           !targetIsCurrent(target)
         )
           return;
+        if (operation === 'activate') {
+          const driver = latest.current.devices
+            .get(target.uuid)
+            ?.get(target.port)?.servoDriver;
+          if (!driver)
+            throw new Error(
+              'Set angle bounds on a compatible motor before activating Servo'
+            );
+          if (
+            ticket !== current.tickets.get(key) ||
+            !targetIsCurrent(target) ||
+            pageIsHidden()
+          )
+            return;
+          const motor = new VirtualServo(
+            driver,
+            () => current.mounted && targetIsCurrent(target),
+            (state) => {
+              if (
+                current.mounted &&
+                current.positionMotors.get(key)?.motor === motor
+              )
+                setPositionStates((previous) =>
+                  new Map(previous).set(key, state)
+                );
+            }
+          );
+          current.positionMotors.set(key, { target, motor });
+          await motor.activate();
+          return;
+        }
         current.activeMotors.set(key, target);
-        if (operation === 'calibrate') await motor.calibrate();
-        else await motor.moveFraction(fraction ?? NaN);
+        if (operation === 'step' && control.type === 'arrows') {
+          if (servo) await servo.stop(true);
+          if (
+            ticket !== current.tickets.get(key) ||
+            !targetIsCurrent(target) ||
+            pageIsHidden()
+          )
+            return;
+          const degrees = control.options.angle * Number(fraction);
+          if (verifiedStep) {
+            await positionMotor(target).moveStep(degrees);
+          } else {
+            const driver = device?.servoDriver;
+            if (!driver)
+              throw new Error('Step mode is not available on this device');
+            const motor =
+              servo ??
+              new VirtualServo(
+                driver,
+                () => current.mounted && targetIsCurrent(target),
+                () => {}
+              );
+            current.positionMotors.set(key, { target, motor });
+            try {
+              await motor.moveStep(degrees);
+            } finally {
+              if (!servo && current.positionMotors.get(key)?.motor === motor)
+                current.positionMotors.delete(key);
+            }
+          }
+        } else if (servo && servoMin !== '' && servoMax !== '') {
+          const bounds = { servoMin, servoMax };
+          if (centering) {
+            servo.lastMoveOwner = null;
+            await servo.moveDegrees(0, bounds);
+          } else {
+            servo.lastMoveOwner = id;
+            await servo.moveFraction(
+              typeof fraction === 'number' ? fraction : NaN,
+              bounds
+            );
+            const latestControl = records.current.get(id);
+            if (
+              owner.center &&
+              current.positionRequests.get(key) === owner &&
+              current.tickets.get(key) === ticket &&
+              selectedRef.current === boardId &&
+              !pageIsHidden() &&
+              targetIsCurrent(target) &&
+              (latestControl?.type === 'slider' ||
+                latestControl?.type === 'arrows') &&
+              latestControl.options.mode === 'servo' &&
+              latestControl.options.autoReturnToCenter
+            ) {
+              servo.lastMoveOwner = null;
+              await servo.moveDegrees(0, bounds);
+            }
+          }
+        }
       } catch (cause) {
-        if (ticket === current.tickets.get(key)) throw cause;
+        if (ticket === current.tickets.get(key)) {
+          if (
+            (operation === 'move' || (operation === 'step' && !verifiedStep)) &&
+            targetIsCurrent(target)
+          ) {
+            try {
+              await queueSpeed(target, 0, undefined, true);
+            } catch (stopError) {
+              throw new AggregateError(
+                [cause, stopError],
+                'Angle move and Stop failed'
+              );
+            }
+          }
+          throw cause;
+        }
       } finally {
-        if (current.calibrating.get(key) === owner)
-          current.calibrating.delete(key);
         if (current.positionRequests.get(key) === owner)
           current.positionRequests.delete(key);
         if (ticket === current.tickets.get(key))
@@ -1155,9 +1355,12 @@ export function ControlsProvider({ children }: PropsWithChildren) {
             } else if (
               (previous.type === 'slider' || previous.type === 'arrows') &&
               (next.type === 'slider' || next.type === 'arrows') &&
-              previous.options.mode !== next.options.mode
+              (previous.options.mode !== next.options.mode ||
+                (previous.options.mode === 'servo' &&
+                  (previous.options.servoMin !== next.options.servoMin ||
+                    previous.options.servoMax !== next.options.servoMax)))
             ) {
-              await stopBeforeChange(previous);
+              await stopBeforeChange(previous, next.options.mode === 'servo');
               ensureCurrent();
               getControl(id);
               next = validate(next, id);
@@ -1193,20 +1396,15 @@ export function ControlsProvider({ children }: PropsWithChildren) {
           if (
             speed !== 0 &&
             (control.type === 'slider' || control.type === 'arrows') &&
-            control.options.mode === 'servo'
+            control.options.mode !== 'speed'
           )
-            throw new Error('Servo controls do not accept speed commands');
+            throw new Error('Position controls do not accept speed commands');
           if (speed !== 0 && document.visibilityState === 'hidden') {
             throw new Error(
               'Motor controls are paused while this page is hidden'
             );
           }
           const target = getTarget(control);
-          if (
-            speed !== 0 &&
-            life.current.calibrating.has(connectionKey(target))
-          )
-            throw new Error('Motor calibration is in progress');
           if (expected && connectionKey(expected) !== connectionKey(target)) {
             throw new Error('Motor connection changed');
           }
@@ -1219,10 +1417,12 @@ export function ControlsProvider({ children }: PropsWithChildren) {
             return undefined;
           return queueSpeed(target, speed, expected?.owner);
         }),
-      calibrate: (id: string) =>
-        execute(id, () => runPosition(id, 'calibrate')),
-      position: (id: string, fraction: number) =>
+      position: (id: string, fraction: number | 'center') =>
         execute(id, () => runPosition(id, 'move', fraction)),
+      activateServo: (id: string) =>
+        execute(id, () => runPosition(id, 'activate')),
+      step: (id: string, direction: number) =>
+        execute(id, () => runPosition(id, 'step', direction)),
       light: (id: string, changes: LightChanges, expected?: ControlTarget) =>
         execute(id, () => {
           const control = getControl(id);
@@ -1291,9 +1491,11 @@ export function ControlsProvider({ children }: PropsWithChildren) {
   // Release keyboard actions and stop every active motor.
   const stopAll = useCallback(async () => {
     window.dispatchEvent(new window.Event('board-input-release'));
-    const targets = [...life.current.activeMotors.values()].filter(
-      targetIsCurrent
+    const active = new Map(life.current.activeMotors);
+    life.current.positionRequests.forEach(({ target }, key) =>
+      active.set(key, target)
     );
+    const targets = [...active.values()].filter(targetIsCurrent);
     const results = await Promise.allSettled(
       targets.map((target) => queueSpeed(target, 0))
     );
@@ -1595,8 +1797,9 @@ export const useAddControl = hookFactory('add');
 export const useUpdateControl = hookFactory('update');
 export const useRemoveControl = hookFactory('remove');
 export const useSetControlSpeed = hookFactory('speed');
-export const useCalibrateControl = hookFactory('calibrate');
 export const useSetControlPosition = hookFactory('position');
+export const useActivateServo = hookFactory('activateServo');
+export const useStepControl = hookFactory('step');
 export const usePositionStates = hookFactory('positionStates');
 export const useSetControlLight = hookFactory('light');
 export const useRetryControls = hookFactory('retry');
@@ -1630,6 +1833,12 @@ export function useControlStatus(id: string) {
     !supportsServo(device)
   )
     reason = 'Servo positioning unavailable';
+  else if (
+    control?.type === 'arrows' &&
+    control.options.mode === 'step' &&
+    !supportsStep(device)
+  )
+    reason = 'Step positioning unavailable';
   else if (
     isLightControlType(control?.type) &&
     control &&
@@ -1694,11 +1903,12 @@ export function useMotorControl(id: string) {
   };
 }
 
-export function usePositionControl(id: string) {
+export function usePositionControl(id: string, initializeServo = false) {
   const status = useControlStatus(id);
   const states = usePositionStates();
-  const calibrate = useCalibrateControl();
   const position = useSetControlPosition();
+  const activate = useActivateServo();
+  const step = useStepControl();
   const speed = useSetControlSpeed();
   const [failure, setFailure] = useState<unknown>(null);
   const { control } = status;
@@ -1707,7 +1917,10 @@ export function usePositionControl(id: string) {
     control && connectionId !== undefined
       ? connectionKey({ uuid: control.uuid, port: control.port, connectionId })
       : null;
-  const state = key ? states.get(key) : undefined;
+  const candidate = key ? states.get(key) : undefined;
+  const isStep = control?.type === 'arrows' && control.options.mode === 'step';
+  const isServoState = candidate?.servoReference !== undefined;
+  const state = isStep !== isServoState ? candidate : undefined;
   const run = async (action: () => Promise<unknown>) => {
     setFailure(null);
     try {
@@ -1716,13 +1929,51 @@ export function usePositionControl(id: string) {
       setFailure(cause);
     }
   };
+  const available =
+    status.available &&
+    (isStep ? supportsStep(status.device) : supportsServo(status.device));
+  const attempted = useRef<string | null>(null);
+  const servoOptions =
+    (control?.type === 'slider' || control?.type === 'arrows') &&
+    control.options.mode === 'servo'
+      ? control.options
+      : null;
+  const initializationKey =
+    key && servoOptions
+      ? JSON.stringify([key, servoOptions.servoMin, servoOptions.servoMax])
+      : null;
+  useEffect(() => {
+    if (
+      !initializeServo ||
+      !available ||
+      !initializationKey ||
+      attempted.current === initializationKey ||
+      isServoState
+    )
+      return;
+    attempted.current = initializationKey;
+    setFailure(null);
+    activate(id).catch(setFailure);
+  }, [
+    initializeServo,
+    available,
+    initializationKey,
+    isServoState,
+    id,
+    activate,
+  ]);
   return {
     state,
-    available: status.available && supportsServo(status.device),
-    ready: status.available && state?.stage === 'ready',
+    reference:
+      available && state?.target != null
+        ? (state.servoReference ?? null)
+        : null,
+    available,
+    ready: available && (isStep || (state?.target != null && !state.active)),
     error: failure || status.error || state?.error,
-    calibrate: () => run(() => calibrate(id)),
     move: (fraction: number) => run(() => position(id, fraction)),
+    center: () => run(() => position(id, 'center')),
+    step: (direction: number) => run(() => step(id, direction)),
     stop: () => run(() => speed(id, 0)),
   };
 }

@@ -4,6 +4,10 @@ import { keyDefaults } from '../shared/shortcuts';
 import { motors } from '../shared/devices';
 import { sliderSizes } from '../shared/sizes';
 import shortcutFields from './shortcuts';
+import {
+  defaultServoBounds,
+  requireServoBounds,
+} from '../../../core/servo-bounds';
 
 // Resolve the motor direction multiplier for a slider.
 function motorDirection(control: Control): number {
@@ -12,6 +16,7 @@ function motorDirection(control: Control): number {
 
 // Validate settings that affect the motor slider.
 function validateOptions(options: Record<string, unknown>): void {
+  requireServoBounds(options);
   if (options.mode !== 'speed' && options.mode !== 'servo') {
     throw new Error('Motor mode is not supported');
   }
@@ -27,6 +32,8 @@ const slider: ControlDefinition<'slider'> = {
   label: 'Motor slider',
   defaults: {
     mode: 'speed',
+    ...defaultServoBounds,
+    autoReturnToCenter: false,
     resetOnRelease: false,
     reverseRotation: false,
     ...keyDefaults(shortcutFields),

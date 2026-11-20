@@ -43,6 +43,7 @@ function Control({
   const { label, icon: Icon } = getDeviceType(device?.type.text);
   const waiting =
     controlTypes[control.type].mode && subscription?.state !== 'ready';
+  const modeLabels = { speed: 'Speed', servo: 'Servo', step: 'Step' };
   let content: React.ReactNode = null;
   if (available && device)
     content = (
@@ -162,7 +163,7 @@ function Control({
             variant="caption"
             sx={{ fontSize: 10, mr: 0.5 }}
           >
-            {control.options.mode === 'servo' ? 'Servo' : 'Speed'}
+            {modeLabels[control.options.mode]}
           </Typography>
         )}
         <Icon sx={{ fontSize: 12, mr: 0.5, flexShrink: 0 }} />

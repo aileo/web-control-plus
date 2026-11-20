@@ -8,6 +8,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import { useMotorControl, usePositionControl } from '../../../core/hooks';
 import { legoColors } from '../../../theme/lego';
 import Error from '../shared/Error';
+import useServoRelease from '../shared/useServoRelease';
 import type { ControlOf } from '../../../core/types';
 
 // Render the directional buttons for a motor control.
@@ -296,9 +297,27 @@ function SpeedArrows({ control }: { control: ControlOf<'arrows'> }) {
 }
 
 function ServoArrows({ control }: { control: ControlOf<'arrows'> }) {
-  const { available, ready, move, stop, error } = usePositionControl(
-    control.id
-  );
+  const {
+    state,
+    reference,
+    available,
+    ready,
+    move,
+    center,
+    step,
+    stop,
+    error,
+  } = usePositionControl(control.id, true);
+  const isStep = control.options.mode === 'step';
+  const autoReturn = !isStep && control.options.autoReturnToCenter;
+  const release = useServoRelease(autoReturn, reference, center);
+  const activate = (value: number) => {
+    if (value === 0) {
+      release.clear();
+      void stop();
+    } else if (isStep) void step(value < 0 ? -1 : 1);
+    else void move(value < 0 ? 0 : 1);
+  };
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Box sx={{ flex: 1, minHeight: 0 }}>
@@ -308,25 +327,69 @@ function ServoArrows({ control }: { control: ControlOf<'arrows'> }) {
           stopOnRelease={false}
           available={available}
           getButtonProps={(value) => ({
-            disabled: value === 0 ? !available : !ready,
-            onClick: () => {
-              if (value === 0) void stop();
-              else void move(value < 0 ? 0 : 1);
+            disabled:
+              value === 0 ? !available : !ready && !(autoReturn && reference),
+            'aria-disabled': value !== 0 && !ready ? true : undefined,
+            onClick: (event) => {
+              if (!autoReturn || value === 0) activate(value);
+              else if (ready && event.detail === 0) {
+                activate(value);
+                void center();
+              }
             },
+            onPointerDown: (event) => {
+              if (
+                !autoReturn ||
+                value === 0 ||
+                !ready ||
+                event.button !== 0 ||
+                !event.isPrimary ||
+                !release.begin(event.pointerId)
+              )
+                return;
+              event.currentTarget.setPointerCapture?.(event.pointerId);
+              activate(value);
+            },
+            onPointerUp: (event) => {
+              if (value !== 0) release.release(event.pointerId);
+            },
+            onPointerCancel: (event) => release.cancel(event.pointerId),
+            onLostPointerCapture: (event) => release.cancel(event.pointerId),
+            onBlur: release.clear,
             onKeyDown: (event) => {
               if (value === 0 || ![' ', 'Enter'].includes(event.key)) return;
               event.preventDefault();
-              if (!event.repeat && ready) void move(value < 0 ? 0 : 1);
+              if (
+                !event.repeat &&
+                ready &&
+                (!autoReturn || release.begin(event.key))
+              )
+                activate(value);
             },
             onKeyUp: (event) => {
-              if (value !== 0 && [' ', 'Enter'].includes(event.key))
+              if (value !== 0 && [' ', 'Enter'].includes(event.key)) {
                 event.preventDefault();
+                release.release(event.key);
+              }
             },
           })}
         />
       </Box>
-      {!ready && (
-        <Typography variant="caption">Calibrate in settings</Typography>
+      {!isStep && state?.target != null && (
+        <Typography variant="caption">Requested: {state.target}°</Typography>
+      )}
+      {!isStep &&
+        state &&
+        state.target == null &&
+        !state.active &&
+        available &&
+        !error && (
+          <Typography variant="caption">
+            Select Servo again to reset zero
+          </Typography>
+        )}
+      {!available && (
+        <Typography variant="caption">Positioning unavailable</Typography>
       )}
       <Error error={error} />
     </Box>
@@ -334,7 +397,7 @@ function ServoArrows({ control }: { control: ControlOf<'arrows'> }) {
 }
 
 export default function Arrows({ control }: { control: ControlOf<'arrows'> }) {
-  return control.options.mode === 'servo' ? (
+  return control.options.mode !== 'speed' ? (
     <ServoArrows control={control} />
   ) : (
     <SpeedArrows control={control} />

@@ -1,34 +1,46 @@
-import PositionLimits from './position-limits.ts';
-
-export type Endpoint = 'left' | 'right';
-
 // Only an adapter explicitly verified for a particular connection may supply
 // this interface. The operation must honor abort before starting motion.
 export type PositionDriver = {
   referenceValid: () => boolean;
   onReferenceLost: (listener: () => void) => () => void;
-  seekEndpoint: (
-    endpoint: Endpoint,
-    options: { signal: AbortSignal; maxPower: number; maxDurationMs: number }
-  ) => Promise<{ kind: 'endpoint'; position: number }>;
-  moveTo: (position: number, signal: AbortSignal) => Promise<void>;
+  absoluteAngle: {
+    min: number;
+    max: number;
+    readPosition: (signal: AbortSignal) => Promise<number>;
+    gotoAngle: (degrees: number, signal: AbortSignal) => Promise<void>;
+  };
+  finiteAngle?: {
+    minDegrees: number;
+    maxDegrees: number;
+  };
   stop: () => Promise<void>;
 };
 
 export type PositionState = {
-  stage: 'uncalibrated' | 'left' | 'right' | 'ready';
+  servoReference?: symbol;
   active: boolean;
   target: number | null;
   fraction: number | null;
   error: string | null;
 };
 
-const maxDurationMs = 5000;
-const maxPower = 15;
+// Feedback and commands must share the same verified, non-wrapping reference.
+export function hasAbsoluteAngle(driver?: PositionDriver): boolean {
+  const range = driver?.absoluteAngle;
+  return Boolean(
+    range &&
+    Number.isSafeInteger(range.min) &&
+    Number.isSafeInteger(range.max) &&
+    range.min < range.max &&
+    typeof range.readPosition === 'function' &&
+    typeof range.gotoAngle === 'function' &&
+    typeof driver?.stop === 'function' &&
+    typeof driver.onReferenceLost === 'function' &&
+    driver?.referenceValid()
+  );
+}
 
 export default class PositionMotor {
-  private limits = new PositionLimits();
-
   private controller: AbortController | null = null;
 
   private generation = 0;
@@ -48,7 +60,6 @@ export default class PositionMotor {
   private publish: (state: PositionState) => void;
 
   private state: PositionState = {
-    stage: 'uncalibrated',
     active: false,
     target: null,
     fraction: null,
@@ -87,7 +98,7 @@ export default class PositionMotor {
       this.referenceLost ||
       generation !== this.generation ||
       !this.current() ||
-      !this.driver.referenceValid()
+      !hasAbsoluteAngle(this.driver)
     )
       throw new Error('Position reference or connection lost');
   }
@@ -100,8 +111,7 @@ export default class PositionMotor {
   }
 
   private invalidate(): void {
-    this.limits.invalidate();
-    this.set({ stage: 'uncalibrated', target: null, fraction: null });
+    this.set({ target: null, fraction: null });
   }
 
   private async stopDriver(): Promise<void> {
@@ -119,10 +129,6 @@ export default class PositionMotor {
     const { generation } = this;
     this.controller?.abort();
     this.controller = null;
-    if (this.state.stage === 'left' || this.state.stage === 'right') {
-      this.limits = new PositionLimits();
-      this.set({ stage: 'uncalibrated' });
-    }
     try {
       await this.stopDriver();
       if (generation === this.generation) this.set({ active: false });
@@ -132,100 +138,78 @@ export default class PositionMotor {
     }
   }
 
-  async calibrate(): Promise<void> {
-    this.limits = new PositionLimits();
-    this.set({ stage: 'uncalibrated', target: null, fraction: null });
-    const pendingStop = this.stop();
-    const { generation } = this;
-    await pendingStop;
-    this.check(generation);
-    const controller = new AbortController();
-    this.controller = controller;
-    this.set({ stage: 'left', active: true, target: null, error: null });
-    try {
-      // Mechanical endpoints must be measured sequentially.
-      // eslint-disable-next-line no-restricted-syntax
-      for (const endpoint of ['left', 'right'] as const) {
-        this.check(generation);
-        this.set({ stage: endpoint });
-        let timer: ReturnType<typeof setTimeout>;
-        let abort: () => void = () => undefined;
-        const interrupted = new Promise<never>((_, reject) => {
-          abort = () => reject(new Error('Position operation cancelled'));
-          controller.signal.addEventListener('abort', abort, { once: true });
-          timer = setTimeout(() => {
-            reject(new Error('Endpoint detection timed out'));
-            controller.abort();
-          }, maxDurationMs);
-        });
-        let result: { kind: 'endpoint'; position: number };
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          result = await Promise.race([
-            this.driver.seekEndpoint(endpoint, {
-              signal: controller.signal,
-              maxPower,
-              maxDurationMs,
-            }),
-            interrupted,
-          ]);
-        } finally {
-          clearTimeout(timer!);
-          controller.signal.removeEventListener('abort', abort);
-        }
-        this.check(generation);
-        if (result.kind !== 'endpoint' || !Number.isFinite(result.position))
-          throw new Error('Endpoint detection failed');
-        // eslint-disable-next-line no-await-in-loop
-        await this.stopDriver();
-        this.check(generation);
-        if (endpoint === 'left') this.limits.captureLeft(result.position);
-        else this.limits.captureRight(result.position);
-      }
-      this.set({ stage: 'ready', active: false });
-    } catch (error) {
-      if (generation === this.generation) {
-        this.limits = new PositionLimits();
-        this.set({ stage: 'uncalibrated', active: false });
-        controller.abort();
-        try {
-          await this.stopDriver();
-        } catch (stopError) {
-          this.failure(stopError);
-          throw stopError;
-        }
-        this.failure(error);
-      }
-      throw error;
-    } finally {
-      if (this.controller === controller) this.controller = null;
-    }
-  }
-
   async moveFraction(fraction: number): Promise<void> {
     if (!Number.isFinite(fraction)) throw new Error('Invalid position target');
-    const { left, right } = this.limits.endpoints();
-    const target = this.limits.clamp(left + (right - left) * fraction);
+    const bounded = Math.max(0, Math.min(1, fraction));
+    await this.move((_position, min, max) => min + (max - min) * bounded);
+  }
+
+  async moveStep(degrees: number): Promise<void> {
+    const capability = this.driver.finiteAngle;
+    if (
+      !capability ||
+      !Number.isFinite(capability.minDegrees) ||
+      !Number.isFinite(capability.maxDegrees) ||
+      capability.minDegrees <= 0 ||
+      capability.maxDegrees < capability.minDegrees ||
+      !Number.isFinite(degrees) ||
+      Math.abs(degrees) < capability.minDegrees ||
+      Math.abs(degrees) > capability.maxDegrees
+    )
+      throw new Error('Unsupported step angle');
+    await this.move((position) => position + degrees);
+  }
+
+  private async move(
+    resolveTarget: (position: number, min: number, max: number) => number
+  ): Promise<void> {
+    this.check(this.generation);
     const pendingStop = this.stop();
     const { generation } = this;
     await pendingStop;
     this.check(generation);
     const controller = new AbortController();
     this.controller = controller;
-    this.set({
-      active: true,
-      target,
-      fraction: Math.max(0, Math.min(1, fraction)),
-      error: null,
-    });
+    this.set({ active: true, error: null });
     let abort: () => void = () => undefined;
+    let feedbackDeadline: ReturnType<typeof setTimeout> | undefined;
     try {
       const interrupted = new Promise<never>((_, reject) => {
         abort = () => reject(new Error('Position operation cancelled'));
         controller.signal.addEventListener('abort', abort, { once: true });
       });
+      const { absoluteAngle } = this.driver;
+      const { min, max } = absoluteAngle;
+      const feedbackTimeout = new Promise<never>((_, reject) => {
+        feedbackDeadline = setTimeout(
+          () => reject(new Error('Absolute angle feedback timed out')),
+          5000
+        );
+      });
+      const position = await Promise.race([
+        absoluteAngle.readPosition(controller.signal),
+        interrupted,
+        feedbackTimeout,
+      ]);
+      clearTimeout(feedbackDeadline);
+      this.check(generation);
+      if (
+        absoluteAngle !== this.driver.absoluteAngle ||
+        min !== absoluteAngle.min ||
+        max !== absoluteAngle.max
+      )
+        throw new Error('Verified absolute angle range changed');
+      if (!Number.isFinite(position) || position < min || position > max)
+        throw new Error(
+          'Position feedback is outside the verified angle range'
+        );
+      const target = Math.max(
+        min,
+        Math.min(max, Math.round(resolveTarget(position, min, max)))
+      );
+      this.set({ target, fraction: (target - min) / (max - min) });
       await Promise.race([
-        this.driver.moveTo(target, controller.signal),
+        absoluteAngle.gotoAngle(target, controller.signal),
         interrupted,
       ]);
       this.check(generation);
@@ -237,6 +221,7 @@ export default class PositionMotor {
       }
       throw error;
     } finally {
+      clearTimeout(feedbackDeadline);
       controller.signal.removeEventListener('abort', abort);
       if (this.controller === controller) this.controller = null;
     }

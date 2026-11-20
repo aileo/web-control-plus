@@ -98,32 +98,25 @@ Simulated tests do not establish physical Bluetooth compatibility or accuracy.
 
 ### Motor positioning gate
 
-Production Servo and Step remain unavailable on all motors. In node-poweredup 10.1.0,
-`TachoMotor` exposes `rotateByDegrees` and rotation feedback, and
-`AbsoluteMotor` exposes `gotoAngle` and absolute feedback. These APIs alone
-do not establish reliable reference lifetime, endpoint detection, cancellation,
-or safe stopping for any particular motor, hub, and firmware. `gotoAngle`
-normalizes its target and cannot be assumed to preserve a multi-turn range.
-The production adapter currently exposes only speed commands and no motor
-position subscriptions. Command feedback includes missing and disabled states,
-and is not evidence that a mechanical endpoint was reached. Zero-speed commands
-clear the provider's active-motor state only after `EXECUTION_COMPLETED`.
-Discarded, missing, disabled, or absent stop feedback remains retryable; pending
-or busy feedback is not treated as completion.
+Servo uses user-configured bounds relative to an attachment-local virtual
+zero. The node-poweredup `TachoMotor` path uses `rotateByDegrees` deltas between
+completed requests. The `AbsoluteMotor` path captures the encoder coordinate
+at activation (rotation mode 2, not absolute sensor mode 3) and offsets each
+`gotoAngle` target by that coordinate. Requests are also clamped to the
+library's non-wrapping command range. Neither path displays
+measured position or probes mechanical stops. WeDo 2.0 is excluded because
+the library rejects both angle command APIs on that hub.
 
-Before enabling a position mode, verify the adapter's reference and interrupt
-semantics, a bounded low-power endpoint detection method and stop behavior on
-each supported combination with a supervised bench test. A timeout is an abort,
-not an endpoint. `PositionLimits` keeps ranges in memory only. An injected `PositionDriver`
-provides explicit endpoint results, reference-loss notification, interruptible
-position commands, and Stop. The provider arbitrates position and speed per
-attachment; a Stop interrupts position work immediately and invalidates queued
-requests. `PositionMotor` clamps targets and never treats timeouts as endpoints.
-The UI and integration tests exercise this path with a fake driver only.
-Its target and active state describe requests, not confirmed motor position.
-The interface does not yet expose the verified position feedback or relative
-movement needed for Step mode. A real driver must bind its lifetime to a
-verified live reference and meet these safety guarantees.
+The provider arbitrates speed and angle requests per attachment. Cancellation,
+unacknowledged angle commands, continuous Speed commands, disconnection,
+rebinding and bound changes invalidate virtual zero.
+
+Arrows offer Step on Servo-capable motors or when a verified `PositionDriver`
+provides a finite step range. The verified driver uses its own feedback and
+bounds. Otherwise Step prefers `rotateByDegrees`; on absolute-only motors, it
+reads the encoder before each step and clamps the target to `gotoAngle`'s
+non-wrapping command range. Neither Servo capability nor that command range
+verifies mechanical travel or provides live position tracking.
 
 ## Releases and GitHub Pages
 

@@ -2,9 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import React, { act } from 'react';
 import PositionMotor, {
-  type Endpoint,
   type PositionDriver,
 } from '../src/core/position-motor.ts';
+import VirtualServo from '../src/core/virtual-servo.ts';
+import { defaultServoBounds } from '../src/core/servo-bounds.ts';
+import { CONSTS } from '../src/core/clients/lego.ts';
 import {
   button,
   click,
@@ -14,21 +16,354 @@ import {
   input as setInput,
   key,
   loadSource,
-  lego,
   mount,
 } from './helpers/controls.ts';
-import { asButton, query } from './helpers/dom.ts';
+import { query } from './helpers/dom.ts';
 
 const Grid = loadSource('components/modules/grid/Grid').default;
 const Modal = loadSource('components/Modal').default;
+const { controlOptions, getControlChoices, motorPositionCapabilities } =
+  loadSource('core/controls');
+const servoOptions = { mode: 'servo', servoMin: -20, servoMax: 40 } as const;
+
+test('virtual Servo validates bounds and sends signed deltas between clamped requests', async () => {
+  const deltas: number[] = [];
+  const targets: (number | null)[] = [];
+  const servo = new VirtualServo(
+    {
+      kind: 'relative',
+      rotate: async (delta) => {
+        deltas.push(delta);
+      },
+    },
+    () => true,
+    (state) => targets.push(state.target)
+  );
+  for (const [servoMin, servoMax] of [
+    [Infinity, 180],
+    [0, 0],
+    [1, 180],
+    [-180, -181],
+  ]) {
+    assert.throws(
+      () => controlOptions('slider', { mode: 'servo', servoMin, servoMax }),
+      /bounds/
+    );
+  }
+  await assert.rejects(servo.moveFraction(1, servoOptions), /virtual zero/);
+  await servo.activate();
+  assert.equal(targets.at(-1), 0);
+  assert.deepEqual(deltas, []);
+  await servo.moveFraction(10, servoOptions);
+  await servo.moveFraction(-10, servoOptions);
+  await servo.moveFraction(0.5, servoOptions);
+  assert.deepEqual(deltas, [40, -60, 30]);
+  assert.equal(targets.at(-1), 10);
+});
+
+test('absolute Servo offsets default bounds from its zero without wrapping', async () => {
+  const angles: number[] = [];
+  let origin = 25;
+  const servo = new VirtualServo(
+    {
+      kind: 'absolute',
+      origin: async () => origin,
+      gotoAngle: async (angle) => {
+        angles.push(angle);
+      },
+    },
+    () => true,
+    () => {}
+  );
+  await servo.activate();
+  assert.deepEqual(angles, []);
+  await servo.moveFraction(2, defaultServoBounds);
+  await servo.moveFraction(-2, defaultServoBounds);
+  assert.deepEqual(angles, [179, -155]);
+  origin = 180;
+  await assert.rejects(servo.activate(), /absolute command range/);
+  await assert.rejects(
+    servo.moveFraction(1, defaultServoBounds),
+    /virtual zero/
+  );
+});
+
+test('Servo tile starts at zero with default bounds and persists edits', async (t) => {
+  const view = await mount(t, {
+    render: () =>
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(Grid),
+        React.createElement(Modal)
+      ),
+  });
+  const angles: number[] = [];
+  const motor = Object.assign(fakeDevice('A'), {
+    requestUpdate: () => motor.emit('rotate', { degrees: 25 }),
+    gotoAngle: async (target: number) => {
+      angles.push(target);
+      return CONSTS.CommandFeedback.EXECUTION_COMPLETED;
+    },
+  });
+  const hub = fakeHub(undefined, undefined, { A: motor });
+  await act(() => view.api.addHub());
+  await act(() =>
+    view.api.openModal('createControl', { uuid: hub.uuid, port: 'A' })
+  );
+  await click(button('Choose Motor arrows - Servo'));
+  const size = button('Create Motor arrows - Servo, 2 by 1');
+  const bounds = () =>
+    Array.from(
+      document.querySelectorAll<HTMLInputElement>(
+        '[role="dialog"] input[type="number"]'
+      )
+    );
+  assert.equal(bounds().length, 0);
+  await click(size);
+  assert.equal(hub.subscriptions.at(-1)?.[2], 2);
+  assert.deepEqual(angles, []);
+  assert.deepEqual(motor.speeds, []);
+  const tile = query(document, '[data-control-id]');
+  assert.match(tile.textContent ?? '', /Requested: 0/);
+  assert.doesNotMatch(tile.textContent ?? '', /Activate Servo/);
+  await click(button('Forward'));
+  assert.deepEqual(angles, [179]);
+  assert.match(tile.textContent ?? '', /Requested: 154/);
+  await click(button('Configure Motor arrows'));
+  assert.deepEqual(
+    bounds().map((field) => field.value),
+    ['-180', '180']
+  );
+  const autoReturn = query(document, '[role="dialog"] input[type="checkbox"]');
+  await click(autoReturn);
+  await setInput(bounds()[0], -20);
+  await setInput(bounds()[1], 40);
+  await click(button('Save'));
+  assert.deepEqual(angles, [179]);
+  assert.doesNotMatch(tile.textContent ?? '', /Requested: 154/);
+  const snapshot = view.api.snapshotProject('Servo bounds');
+  assert.equal(Reflect.get(snapshot.controls[0].options, 'servoMin'), -20);
+  assert.equal(Reflect.get(snapshot.controls[0].options, 'servoMax'), 40);
+  assert.equal(
+    Reflect.get(snapshot.controls[0].options, 'autoReturnToCenter'),
+    true
+  );
+  assert.match(tile.textContent ?? '', /Requested: 0/);
+  const forward = button('Forward');
+  await key(forward, 'keydown', 'Enter');
+  assert.deepEqual(angles, [179, 65]);
+  await key(forward, 'keyup', 'Enter');
+  assert.deepEqual(angles, [179, 65, 25]);
+  await key(forward, 'keydown', 'Enter');
+  await act(async () => window.dispatchEvent(new window.Event('blur')));
+  await key(forward, 'keyup', 'Enter');
+  assert.deepEqual(angles, [179, 65, 25, 65]);
+});
+
+test('adding Servo arrows reuses the slider reference and honors each tile’s bounds', async (t) => {
+  const view = await mount(t, { render: () => React.createElement(Grid) });
+  let originReads = 0;
+  const angles: number[] = [];
+  const motor = Object.assign(fakeDevice('A'), {
+    requestUpdate: () => {
+      originReads += 1;
+      motor.emit('rotate', { degrees: originReads === 1 ? 25 : 400 });
+    },
+    gotoAngle: async (target: number) => {
+      angles.push(target);
+      return CONSTS.CommandFeedback.EXECUTION_COMPLETED;
+    },
+  });
+  fakeHub(undefined, undefined, { A: motor });
+  await act(() => view.api.addHub());
+  const slider = await create(view, 'slider', 'A', {
+    options: { ...servoOptions, autoReturnToCenter: true },
+  });
+  await act(() => view.api.position(slider.id, 0));
+  const arrows = await create(view, 'arrows', 'A', {
+    options: { ...servoOptions, servoMax: 60 },
+  });
+  const forward = button('Forward');
+  assert.equal((forward as HTMLButtonElement).disabled, false);
+  assert.equal(originReads, 1);
+  const input = query(document, 'input[aria-label="Servo target position"]');
+  assert.equal(input.getAttribute('aria-valuetext'), 'Requested -20 degrees');
+  await key(input, 'keydown', 'End');
+  await setInput(input, 100);
+  await click(forward);
+  await key(input, 'keyup', 'End');
+  assert.deepEqual(angles, [5, 65, 85]);
+  assert.equal(input.getAttribute('aria-valuetext'), 'Requested 60 degrees');
+  assert.equal(originReads, 1);
+  await act(() => view.api.update(arrows.id, { options: { mode: 'speed' } }));
+  assert.equal(input.getAttribute('aria-valuetext'), 'Requested 60 degrees');
+  await act(() => view.api.update(arrows.id, { options: { mode: 'servo' } }));
+  await act(() => view.api.remove(arrows.id));
+  assert.equal(input.getAttribute('aria-valuetext'), 'Requested 60 degrees');
+  await act(() => view.api.position(slider.id, 0));
+  assert.deepEqual(angles, [5, 65, 85, 5]);
+  assert.equal(originReads, 1);
+});
+
+test('removing a sibling during a move exposes the invalidated Servo reference', async (t) => {
+  const view = await mount(t, { render: () => React.createElement(Grid) });
+  let finish: ((result: number) => void) | undefined;
+  const motor = Object.assign(fakeDevice('A'), {
+    rotateByDegrees: () =>
+      new Promise<number>((resolve) => {
+        finish = resolve;
+      }),
+  });
+  fakeHub(undefined, undefined, { A: motor });
+  await act(() => view.api.addHub());
+  const slider = await create(view, 'slider', 'A', { options: servoOptions });
+  const arrows = await create(view, 'arrows', 'A', { options: servoOptions });
+  let move: Promise<void> | undefined;
+  await act(async () => {
+    move = view.api.position(slider.id, 1);
+  });
+  assert.ok(finish);
+  await act(() => view.api.remove(arrows.id));
+  await act(async () => {
+    finish?.(CONSTS.CommandFeedback.EXECUTION_COMPLETED);
+    await move;
+  });
+  assert.equal(motor.speeds.at(-1)?.[0], 0);
+  assert.match(
+    document.body.textContent ?? '',
+    /Select Servo again to reset zero/
+  );
+  await act(async () => {
+    await assert.rejects(view.api.position(slider.id, 0), /virtual zero/);
+  });
+});
+
+test('Servo slider has no Stop button and Stop all clears its queued return', async (t) => {
+  const view = await mount(t, { render: () => React.createElement(Grid) });
+  const commands: number[][] = [];
+  let complete: (() => void) | undefined;
+  const motor = Object.assign(fakeDevice('A'), {
+    rotateByDegrees: (degrees: number, speed: number) => {
+      commands.push([degrees, speed]);
+      return new Promise<number>((resolve) => {
+        complete = () => resolve(CONSTS.CommandFeedback.EXECUTION_COMPLETED);
+      });
+    },
+  });
+  fakeHub(undefined, undefined, { A: motor });
+  await act(() => view.api.addHub());
+  await create(view, 'slider', 'A', {
+    options: { ...servoOptions, autoReturnToCenter: true },
+  });
+  const slider = query(document, 'input[aria-label="Servo target position"]');
+  assert.ok(
+    !Array.from(document.querySelectorAll('button')).some(
+      (element) => element.textContent?.trim() === 'Stop'
+    )
+  );
+  await key(slider, 'keydown', 'End');
+  await setInput(slider, 100);
+  await key(slider, 'keyup', 'End');
+  assert.deepEqual(commands, [[40, 15]]);
+  await act(async () => complete?.());
+  assert.deepEqual(commands, [
+    [40, 15],
+    [40, -15],
+  ]);
+  await act(async () => complete?.());
+  assert.match(
+    slider.getAttribute('aria-valuetext') ?? '',
+    /Requested 0 degrees/
+  );
+  await key(slider, 'keydown', 'Home');
+  await setInput(slider, 0);
+  await key(slider, 'keyup', 'Home');
+  await act(() => view.api.stopAll());
+  await act(async () => complete?.());
+  assert.deepEqual(commands, [
+    [40, 15],
+    [40, -15],
+    [20, -15],
+  ]);
+});
+
+test('relative driver is exposed only for supported hubs and is reset on rebind and disconnect', async (t) => {
+  const view = await mount(t);
+  const calls: number[][] = [];
+  const motor = (port: string) =>
+    Object.assign(fakeDevice(port), {
+      rotateByDegrees: async (...args: [number, number, boolean]) => {
+        calls.push([args[0], args[1]]);
+        return CONSTS.CommandFeedback.EXECUTION_COMPLETED;
+      },
+    });
+  const hub = fakeHub(undefined, undefined, { A: motor('A'), B: motor('B') });
+  await act(() => view.api.addHub());
+  const servo = await create(view, 'slider', 'A', { options: servoOptions });
+  await act(async () => {
+    await view.api.activateServo(servo.id);
+    await view.api.position(servo.id, 0);
+    await view.api.position(servo.id, 1);
+    await view.api.update(servo.id, { port: 'B' });
+    await assert.rejects(view.api.position(servo.id, 1), /virtual zero/);
+    await view.api.activateServo(servo.id);
+  });
+  assert.deepEqual(calls, [
+    [20, -15],
+    [60, 15],
+  ]);
+  await act(() => view.api.disconnect(hub.uuid));
+  fakeHub(undefined, undefined, { A: motor('A'), B: motor('B') });
+  await act(() => view.api.addHub());
+  await act(async () => {
+    await assert.rejects(view.api.position(servo.id, 1), /virtual zero/);
+  });
+  assert.equal(calls.length, 2);
+  const wedo = fakeHub('wedo', CONSTS.HubType.WEDO2_SMART_HUB, {
+    A: motor('A'),
+  });
+  await act(() => view.api.addHub());
+  assert.equal(
+    view.api.devices.get(wedo.uuid)?.get('A')?.servoDriver,
+    undefined
+  );
+  assert.ok(
+    !getControlChoices(view.api.devices.get(wedo.uuid)?.get('A')).some(
+      (choice: { motorMode?: string }) => choice.motorMode === 'step'
+    )
+  );
+});
+
+test('Stop aborts an in-flight relative command and discards its late completion', async (t) => {
+  const view = await mount(t);
+  let finish: ((result: number) => void) | undefined;
+  const motor = Object.assign(fakeDevice('A'), {
+    rotateByDegrees: () =>
+      new Promise<number>((resolve) => {
+        finish = resolve;
+      }),
+  });
+  fakeHub(undefined, undefined, { A: motor });
+  await act(() => view.api.addHub());
+  const servo = await create(view, 'slider', 'A', { options: servoOptions });
+  await act(() => view.api.activateServo(servo.id));
+  let move: Promise<void>;
+  await act(async () => {
+    move = view.api.position(servo.id, 1);
+  });
+  await act(async () => {
+    assert.ok(finish);
+    await view.api.speed(servo.id, 0);
+    finish(CONSTS.CommandFeedback.EXECUTION_COMPLETED);
+    await move;
+    await assert.rejects(view.api.position(servo.id, 0), /virtual zero/);
+  });
+  assert.equal(motor.speeds.at(-1)?.[0], 0);
+});
 
 function fake() {
   const calls: string[] = [];
-  const pending: {
-    endpoint: Endpoint;
-    signal: AbortSignal;
-    resolve: (value: { kind: 'endpoint'; position: number }) => void;
-  }[] = [];
   let valid = true;
   let lost = () => {};
   const driver: PositionDriver = {
@@ -39,14 +374,13 @@ function fake() {
         lost = () => {};
       };
     },
-    seekEndpoint: (endpoint, { signal, maxPower, maxDurationMs }) => {
-      calls.push(`seek:${endpoint}:${maxPower}:${maxDurationMs}`);
-      return new Promise((resolve) => {
-        pending.push({ endpoint, signal, resolve });
-      });
-    },
-    moveTo: async (target) => {
-      calls.push(`move:${target}`);
+    absoluteAngle: {
+      min: -20,
+      max: 40,
+      readPosition: async () => 0,
+      gotoAngle: async (target) => {
+        calls.push(`move:${target}`);
+      },
     },
     stop: async () => {
       calls.push('stop');
@@ -55,7 +389,6 @@ function fake() {
   return {
     driver,
     calls,
-    pending,
     lose: () => {
       valid = false;
       lost();
@@ -72,47 +405,61 @@ async function flush() {
   });
 }
 
-test('calibration requires explicit ordered endpoints and clamps targets', async () => {
+test('Verified Step path is gated on an absolute command, feedback and a valid range', () => {
   const adapter = fake();
-  const motor = new PositionMotor(
-    adapter.driver,
-    () => true,
-    () => {}
+  const device = {
+    uuid: 'hub',
+    mac: 'hub',
+    port: 'A',
+    type: { num: 0, text: '', compact: '' },
+    connected: true,
+    events: {},
+    commands: {},
+    positionDriver: adapter.driver,
+  };
+  const { absoluteAngle } = adapter.driver;
+  assert.equal(motorPositionCapabilities(device).absolutePosition, true);
+  for (const range of [
+    { ...absoluteAngle, min: 40 },
+    { ...absoluteAngle, max: Infinity },
+    { ...absoluteAngle, readPosition: undefined },
+    { ...absoluteAngle, gotoAngle: undefined, rotateByDegrees: async () => {} },
+  ]) {
+    assert.equal(
+      Reflect.apply(motorPositionCapabilities, undefined, [
+        {
+          ...device,
+          positionDriver: { ...adapter.driver, absoluteAngle: range },
+        },
+      ]).absolutePosition,
+      false
+    );
+  }
+  assert.equal(controlOptions('arrows').mode, 'speed');
+  assert.throws(
+    () => controlOptions('slider', { mode: 'step' }),
+    /not supported/
   );
-  const calibrating = motor.calibrate();
-  await flush();
-  assert.deepEqual(adapter.calls, ['stop', 'seek:left:15:5000']);
-  await assert.rejects(() => motor.moveFraction(0), /not calibrated/);
-  adapter.pending[0].resolve({ kind: 'endpoint', position: -20 });
-  await flush();
-  assert.equal(adapter.pending[1].endpoint, 'right');
-  adapter.pending[1].resolve({ kind: 'endpoint', position: 40 });
-  await calibrating;
-  assert.equal(motor.snapshot().stage, 'ready');
-  await motor.moveFraction(-1);
-  await motor.moveFraction(2);
-  assert.ok(adapter.calls.includes('move:-20'));
-  assert.ok(adapter.calls.includes('move:40'));
 });
 
-test('stop aborts calibration and never accepts a late endpoint', async () => {
+test('Verified position controller clamps absolute targets and never moves without in-range feedback', async () => {
   const adapter = fake();
   const motor = new PositionMotor(
     adapter.driver,
     () => true,
     () => {}
   );
-  const calibrating = motor.calibrate();
-  await flush();
-  const result = assert.rejects(calibrating, /cancelled/);
-  await motor.stop();
-  await result;
-  assert.equal(adapter.pending[0].signal.aborted, true);
-  adapter.pending[0].resolve({ kind: 'endpoint', position: -1 });
-  await flush();
-  assert.equal(adapter.pending.length, 1);
-  assert.equal(motor.snapshot().stage, 'uncalibrated');
-  await assert.rejects(() => motor.moveFraction(0), /not calibrated/);
+  await motor.moveFraction(-Number.MAX_VALUE);
+  await motor.moveFraction(0.5);
+  await motor.moveFraction(Number.MAX_VALUE);
+  for (const feedback of [NaN, -21, 41]) {
+    adapter.driver.absoluteAngle.readPosition = async () => feedback;
+    await assert.rejects(motor.moveFraction(0.5), /feedback/);
+  }
+  assert.deepEqual(
+    adapter.calls.filter((call) => call.startsWith('move:')),
+    ['move:-20', 'move:10', 'move:40']
+  );
 });
 
 test('reference loss invalidates limits and stops the adapter', async () => {
@@ -122,12 +469,6 @@ test('reference loss invalidates limits and stops the adapter', async () => {
     () => true,
     () => {}
   );
-  const calibrating = motor.calibrate();
-  await flush();
-  adapter.pending[0].resolve({ kind: 'endpoint', position: -1 });
-  await flush();
-  adapter.pending[1].resolve({ kind: 'endpoint', position: 1 });
-  await calibrating;
   const stops = adapter.calls.filter((call) => call === 'stop').length;
   adapter.lose();
   await flush();
@@ -138,43 +479,6 @@ test('reference loss invalidates limits and stops the adapter', async () => {
   await assert.rejects(() => motor.moveFraction(0), /reference/);
 });
 
-test('timeout stops the motor and does not commit a partial range', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const adapter = fake();
-  const motor = new PositionMotor(
-    adapter.driver,
-    () => true,
-    () => {}
-  );
-  const calibrating = motor.calibrate();
-  await flush();
-  const result = assert.rejects(calibrating, /timed out/);
-  t.mock.timers.tick(5000);
-  await result;
-  assert.equal(adapter.pending[0].signal.aborted, true);
-  assert.equal(adapter.calls.at(-1), 'stop');
-  assert.equal(motor.snapshot().stage, 'uncalibrated');
-  await assert.rejects(() => motor.moveFraction(0), /not calibrated/);
-});
-
-test('invalid right endpoint aborts without committing the left endpoint', async () => {
-  const adapter = fake();
-  const motor = new PositionMotor(
-    adapter.driver,
-    () => true,
-    () => {}
-  );
-  const calibration = motor.calibrate();
-  await flush();
-  adapter.pending[0].resolve({ kind: 'endpoint', position: 10 });
-  await flush();
-  const result = assert.rejects(calibration, /right endpoint/);
-  adapter.pending[1].resolve({ kind: 'endpoint', position: 10 });
-  await result;
-  assert.equal(adapter.calls.at(-1), 'stop');
-  await assert.rejects(() => motor.moveFraction(0), /not calibrated/);
-});
-
 test('a later move waits for every outstanding stop', async () => {
   const adapter = fake();
   const motor = new PositionMotor(
@@ -182,12 +486,6 @@ test('a later move waits for every outstanding stop', async () => {
     () => true,
     () => {}
   );
-  const calibrating = motor.calibrate();
-  await flush();
-  adapter.pending[0].resolve({ kind: 'endpoint', position: -1 });
-  await flush();
-  adapter.pending[1].resolve({ kind: 'endpoint', position: 1 });
-  await calibrating;
   let release: (() => void) | undefined;
   let calls = 0;
   adapter.driver.stop = () => {
@@ -202,12 +500,12 @@ test('a later move waits for every outstanding stop', async () => {
   await flush();
   const move = motor.moveFraction(1);
   await flush();
-  assert.equal(adapter.calls.includes('move:1'), false);
+  assert.equal(adapter.calls.includes('move:40'), false);
   assert.ok(release);
   release();
   await firstStop;
   await move;
-  assert.equal(adapter.calls.includes('move:1'), true);
+  assert.equal(adapter.calls.includes('move:40'), true);
 });
 
 test('stop cancels an in-flight move even if its completion never arrives', async () => {
@@ -217,14 +515,8 @@ test('stop cancels an in-flight move even if its completion never arrives', asyn
     () => true,
     () => {}
   );
-  const calibrating = motor.calibrate();
-  await flush();
-  adapter.pending[0].resolve({ kind: 'endpoint', position: -1 });
-  await flush();
-  adapter.pending[1].resolve({ kind: 'endpoint', position: 1 });
-  await calibrating;
   let signal: AbortSignal | undefined;
-  adapter.driver.moveTo = (_target, input) => {
+  adapter.driver.absoluteAngle.gotoAngle = (_target, input) => {
     signal = input;
     return new Promise<void>(() => {});
   };
@@ -258,20 +550,27 @@ test('only an explicitly injected adapter is attached to a live device', async (
     view.api.devices.get(hub.uuid)?.get('A')?.positionDriver,
     undefined
   );
-  assert.deepEqual(adapter.calls, []);
+  assert.equal(adapter.calls.length, 0);
 });
 
 test('unsupported devices reject Servo creation without commands', async (t) => {
   const view = await mount(t);
   const hub = fakeHub();
   await act(() => view.api.addHub());
+  const device = view.api.devices.get(hub.uuid)?.get('A');
+  assert.deepEqual(
+    Array.from(getControlChoices(device))
+      .map((choice) => choice.motorMode)
+      .filter(Boolean),
+    ['speed', 'speed']
+  );
   await act(async () => {
     await assert.rejects(
       view.api.create({
         type: 'arrows',
         uuid: hub.uuid,
         port: 'A',
-        options: { mode: 'servo' },
+        options: { mode: 'servo', servoMin: -20, servoMax: 40 },
       }),
       /not available/
     );
@@ -280,338 +579,101 @@ test('unsupported devices reject Servo creation without commands', async (t) => 
   assert.equal(hub.devices.A.speeds.length, 0);
 });
 
-test('provider excludes speed during calibration and Stop aborts it immediately', async (t) => {
-  const adapter = fake();
-  const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
-  });
-  const hub = fakeHub();
-  await act(() => view.api.addHub());
-  const slider = await create(view, 'slider', 'A', {
-    options: { mode: 'servo' },
-  });
-  const speed = await create(view, 'arrows');
-  const stop = await create(view, 'stop');
-  let calibration: Promise<void> | undefined;
-  await act(async () => {
-    calibration = view.api.calibrate(slider.id);
-  });
-  assert.equal(adapter.pending[0].endpoint, 'left');
-  await act(async () => {
-    await assert.rejects(view.api.speed(speed.id, 40), /calibration/);
-  });
-  await act(async () => {
-    await view.api.speed(stop.id, 0);
-    await calibration;
-  });
-  assert.equal(adapter.pending[0].signal.aborted, true);
-  adapter.pending[0].resolve({ kind: 'endpoint', position: -10 });
-  await flush();
-  assert.equal(adapter.pending.length, 1);
-  assert.equal(
-    hub.devices.A.speeds.some(([value]) => value === 40),
-    false
-  );
-});
-
-test('Stop sends speed zero even when the position stop fails', async (t) => {
-  const adapter = fake();
-  const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
-  });
-  const hub = fakeHub();
-  await act(() => view.api.addHub());
-  const slider = await create(view, 'slider', 'A', {
-    options: { mode: 'servo' },
-  });
-  let calibration: Promise<void> | undefined;
-  await act(async () => {
-    calibration = view.api.calibrate(slider.id);
-  });
-  const priorSpeeds = hub.devices.A.speeds.length;
-  adapter.driver.stop = async () => {
-    throw new Error('position stop failed');
+test('Step is offered on relative, absolute-only, and dual-angle motors', async (t) => {
+  const view = await mount(t, { render: () => React.createElement(Grid) });
+  const relativeMoves: number[][] = [];
+  const absoluteTargets: number[] = [];
+  let position = 175;
+  const rotateByDegrees = async (degrees: number, speed: number) => {
+    relativeMoves.push([degrees, speed]);
+    return CONSTS.CommandFeedback.EXECUTION_COMPLETED;
   };
-  await act(async () => {
-    await assert.rejects(view.api.speed(slider.id, 0), /position stop failed/);
-    await calibration;
+  const absolute = (port: string) => {
+    const device = Object.assign(fakeDevice(port), {
+      requestUpdate: () => device.emit('rotate', { degrees: position }),
+      gotoAngle: async (target: number) => {
+        absoluteTargets.push(target);
+        position = target;
+        return CONSTS.CommandFeedback.EXECUTION_COMPLETED;
+      },
+    });
+    return device;
+  };
+  const hub = fakeHub(undefined, undefined, {
+    A: Object.assign(fakeDevice('A'), { rotateByDegrees }),
+    B: absolute('B'),
+    C: Object.assign(absolute('C'), { rotateByDegrees }),
   });
-  assert.equal(adapter.pending[0].signal.aborted, true);
-  assert.deepEqual(
-    hub.devices.A.speeds.slice(priorSpeeds).map(([v]) => v),
-    [0]
-  );
-  adapter.driver.stop = async () => {};
+  await act(() => view.api.addHub());
+  for (const [port, direction] of [
+    ['A', -1],
+    ['B', 1],
+    ['C', 1],
+  ] as const) {
+    const choices = getControlChoices(
+      view.api.devices.get(hub.uuid)?.get(port)
+    );
+    assert.ok(
+      choices.some(
+        (choice: { motorMode?: string }) => choice.motorMode === 'servo'
+      )
+    );
+    assert.ok(
+      choices.some(
+        (choice: { motorMode?: string }) => choice.motorMode === 'step'
+      )
+    );
+    const step = await create(view, 'arrows', port, {
+      options: { mode: 'step', angle: 12 },
+    });
+    await act(() => view.api.step(step.id, direction));
+    if (port === 'B') await act(() => view.api.step(step.id, -1));
+  }
+  assert.deepEqual(relativeMoves, [
+    [12, -15],
+    [12, 15],
+  ]);
+  assert.deepEqual(absoluteTargets, [179, 167]);
 });
 
-test('Stop sends speed zero without waiting for a stalled position stop', async (t) => {
-  const adapter = fake();
-  const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
+test('Stop all cancels angle Step while waiting for absolute feedback', async (t) => {
+  const view = await mount(t);
+  let reading = false;
+  const targets: number[] = [];
+  const motor = Object.assign(fakeDevice('A'), {
+    requestUpdate: () => {
+      reading = true;
+    },
+    gotoAngle: async (target: number) => {
+      targets.push(target);
+      return CONSTS.CommandFeedback.EXECUTION_COMPLETED;
+    },
   });
-  const hub = fakeHub();
+  fakeHub(undefined, undefined, { A: motor });
   await act(() => view.api.addHub());
-  const slider = await create(view, 'slider', 'A', {
-    options: { mode: 'servo' },
-  });
-  let calibration: Promise<void> | undefined;
+  const step = await create(view, 'arrows', 'A', { options: { mode: 'step' } });
+  let pending: Promise<void> | undefined;
   await act(async () => {
-    calibration = view.api.calibrate(slider.id);
-  });
-  const priorSpeeds = hub.devices.A.speeds.length;
-  let release: (() => void) | undefined;
-  adapter.driver.stop = () =>
-    new Promise<void>((resolve) => {
-      release = resolve;
-    });
-  let stopped: Promise<void> | undefined;
-  await act(async () => {
-    stopped = view.api.speed(slider.id, 0);
+    pending = view.api.step(step.id, 1);
     await flush();
   });
-  assert.equal(adapter.pending[0].signal.aborted, true);
-  assert.deepEqual(
-    hub.devices.A.speeds.slice(priorSpeeds).map(([v]) => v),
-    [0]
-  );
+  assert.equal(reading, true);
+  await act(() => view.api.stopAll());
   await act(async () => {
-    assert.ok(release);
-    release();
-    await stopped;
-    await calibration;
+    motor.emit('rotate', { degrees: 25 });
+    await pending;
   });
-  adapter.driver.stop = async () => {};
+  assert.deepEqual(targets, []);
 });
 
-test('provider Stop invalidates calibration waiting behind a speed command', async (t) => {
+test('Step creation, feedback, limits, repeated inputs and Stop share the position path', async (t) => {
   const adapter = fake();
-  const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
-  });
-  const hub = fakeHub();
-  await act(() => view.api.addHub());
-  const slider = await create(view, 'slider', 'A', {
-    options: { mode: 'servo' },
-  });
-  const speed = await create(view, 'arrows');
-  let release: (() => void) | undefined;
-  hub.devices.A.setSpeed = async (value) => {
-    if (value === 30)
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
-    return lego.CONSTS.CommandFeedback.EXECUTION_COMPLETED;
+  let position = 35;
+  adapter.driver.finiteAngle = {
+    minDegrees: 1,
+    maxDegrees: 90,
   };
-  let running: Promise<unknown> | undefined;
-  await act(async () => {
-    running = view.api.speed(speed.id, 30);
-  });
-  let calibration: Promise<unknown> | undefined;
-  let stopped: Promise<unknown> | undefined;
-  await act(async () => {
-    calibration = view.api.calibrate(slider.id);
-    stopped = view.api.speed(speed.id, 0);
-  });
-  await act(async () => {
-    assert.ok(release);
-    release();
-    await Promise.all([running, calibration, stopped]);
-  });
-  assert.equal(adapter.pending.length, 0);
-});
-
-test('rebinding cancels calibration and discards its old reference', async (t) => {
-  const adapter = fake();
-  const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName && ['A', 'D'].includes(device.portName)
-        ? adapter.driver
-        : undefined,
-  });
-  const hub = fakeHub();
-  hub.devices.D = fakeDevice('D');
-  hub.ports.push('D');
-  await act(() => view.api.addHub());
-  const slider = await create(view, 'slider', 'A', {
-    options: { mode: 'servo' },
-  });
-  let calibration: Promise<void> | undefined;
-  await act(async () => {
-    calibration = view.api.calibrate(slider.id);
-  });
-  await act(async () => {
-    await view.api.update(slider.id, { port: 'D' });
-    await calibration;
-  });
-  assert.equal(adapter.pending[0].signal.aborted, true);
-  await act(async () => {
-    await assert.rejects(view.api.position(slider.id, 1), /not calibrated/);
-  });
-  assert.ok(hub.devices.D.speeds.every(([value]) => value === 0));
-});
-
-test('Stop interrupts an in-flight position without waiting for completion', async (t) => {
-  const adapter = fake();
-  const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
-  });
-  fakeHub();
-  await act(() => view.api.addHub());
-  const slider = await create(view, 'slider', 'A', {
-    options: { mode: 'servo' },
-  });
-  const stop = await create(view, 'stop');
-  let calibration: Promise<void> | undefined;
-  await act(async () => {
-    calibration = view.api.calibrate(slider.id);
-  });
-  await act(async () => {
-    adapter.pending[0].resolve({ kind: 'endpoint', position: -10 });
-  });
-  await act(async () => {
-    adapter.pending[1].resolve({ kind: 'endpoint', position: 30 });
-    await calibration;
-  });
-  let signal: AbortSignal | undefined;
-  adapter.driver.moveTo = (target, input) => {
-    adapter.calls.push(`move:${target}`);
-    signal = input;
-    return new Promise<void>(() => {});
-  };
-  let move: Promise<void> | undefined;
-  await act(async () => {
-    move = view.api.position(slider.id, 2);
-  });
-  assert.equal(adapter.calls.at(-1), 'move:30');
-  await act(async () => {
-    await view.api.speed(stop.id, 0);
-    await move;
-  });
-  assert.equal(signal?.aborted, true);
-  assert.equal(adapter.calls.at(-1), 'stop');
-});
-
-test('disconnect aborts positioning and never replays it on reconnect', async (t) => {
-  const adapter = fake();
-  const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
-  });
-  const hub = fakeHub();
-  await act(() => view.api.addHub());
-  const slider = await create(view, 'slider', 'A', {
-    options: { mode: 'servo' },
-  });
-  let calibration: Promise<void> | undefined;
-  await act(async () => {
-    calibration = view.api.calibrate(slider.id);
-  });
-  await act(async () => {
-    await view.api.disconnect(hub.uuid);
-  });
-  await act(async () => {
-    await calibration;
-  });
-  assert.equal(adapter.pending[0].signal.aborted, true);
-  const replacement = fakeHub();
-  await act(() => view.api.addHub());
-  assert.equal(adapter.pending.length, 1);
-  assert.equal(replacement.devices.A.speeds.length, 0);
-  await act(async () => {
-    await assert.rejects(view.api.position(slider.id, 1), /not calibrated/);
-  });
-});
-
-test('a speed request interrupts position before driving the motor', async (t) => {
-  const adapter = fake();
-  const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
-  });
-  const hub = fakeHub();
-  await act(() => view.api.addHub());
-  const slider = await create(view, 'slider', 'A', {
-    options: { mode: 'servo' },
-  });
-  const speed = await create(view, 'arrows');
-  let calibration: Promise<void> | undefined;
-  await act(async () => {
-    calibration = view.api.calibrate(slider.id);
-  });
-  await act(async () => {
-    adapter.pending[0].resolve({ kind: 'endpoint', position: -10 });
-  });
-  await act(async () => {
-    adapter.pending[1].resolve({ kind: 'endpoint', position: 30 });
-    await calibration;
-  });
-  let signal: AbortSignal | undefined;
-  adapter.driver.moveTo = (_target, input) => {
-    signal = input;
-    return new Promise<void>(() => {});
-  };
-  let move: Promise<void> | undefined;
-  await act(async () => {
-    move = view.api.position(slider.id, 1);
-  });
-  await act(async () => {
-    await view.api.speed(speed.id, 40);
-    await move;
-  });
-  assert.equal(signal?.aborted, true);
-  assert.equal(hub.devices.A.speeds.at(-1)?.[0], 40);
-});
-
-test('reference loss cancels a queued calibration and still stops speed', async (t) => {
-  const adapter = fake();
-  const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
-  });
-  const hub = fakeHub();
-  await act(() => view.api.addHub());
-  const servo = await create(view, 'slider', 'A', {
-    options: { mode: 'servo' },
-  });
-  const speed = await create(view, 'arrows');
-  let release: (() => void) | undefined;
-  hub.devices.A.setSpeed = async (value) => {
-    hub.devices.A.speeds.push([value]);
-    if (value === 30)
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
-    return lego.CONSTS.CommandFeedback.EXECUTION_COMPLETED;
-  };
-  let running: Promise<unknown> | undefined;
-  let calibration: Promise<unknown> | undefined;
-  await act(async () => {
-    running = view.api.speed(speed.id, 30);
-  });
-  await act(async () => {
-    calibration = view.api.calibrate(servo.id);
-    adapter.lose();
-    adapter.restore();
-  });
-  await act(async () => {
-    assert.ok(release);
-    release();
-    await Promise.all([running, calibration]);
-  });
-  assert.equal(adapter.pending.length, 0);
-  assert.deepEqual(
-    hub.devices.A.speeds.map(([value]) => value),
-    [30, 0]
-  );
-});
-
-test('Servo creation, calibration, arrows and slider use the provider path', async (t) => {
-  const adapter = fake();
+  adapter.driver.absoluteAngle.readPosition = async () => position;
   const view = await mount(t, {
     positionDriverFactory: (_hub, device) =>
       device.portName === 'A' ? adapter.driver : undefined,
@@ -628,30 +690,27 @@ test('Servo creation, calibration, arrows and slider use the provider path', asy
   await act(() =>
     view.api.openModal('createControl', { uuid: hub.uuid, port: 'A' })
   );
-  assert.ok(button('Choose Motor slider - Servo'));
-  await click(button('Choose Motor arrows - Servo'));
-  await click(button('Create Motor arrows - Servo, 2 by 1'));
+  assert.equal(
+    document.querySelector('[aria-label="Choose Motor slider - Step"]'),
+    null
+  );
+  await click(button('Choose Motor arrows - Step'));
+  await click(button('Create Motor arrows - Step, 2 by 1'));
   assert.equal(adapter.calls.length, 0);
   assert.equal(hub.devices.A.speeds.length, 0);
-  assert.ok(document.querySelector('[data-motor-mode="servo"]'));
-  assert.equal(
-    asButton(query(document, 'button[aria-label="Forward"]')).disabled,
-    true
-  );
+  assert.ok(document.querySelector('[data-motor-mode="step"]'));
   await click(button('Configure Motor arrows'));
-  await click(query(document, '[role="dialog"] input[type="checkbox"]'));
-  await click(button('Start calibration'));
-  assert.equal(adapter.pending[0].endpoint, 'left');
-  await act(async () => {
-    adapter.pending[0].resolve({ kind: 'endpoint', position: -20 });
-  });
-  assert.equal(adapter.pending[1].endpoint, 'right');
-  await act(async () => {
-    adapter.pending[1].resolve({ kind: 'endpoint', position: 40 });
-  });
+  assert.match(
+    document.querySelector('[role="dialog"]')?.textContent ?? '',
+    /Verified absolute angle range/
+  );
+  assert.doesNotMatch(
+    document.querySelector('[role="dialog"]')?.textContent ?? '',
+    /calibrat|seek/i
+  );
   await click(button('Cancel'));
   let signal: AbortSignal | undefined;
-  adapter.driver.moveTo = (target, input) => {
+  adapter.driver.absoluteAngle.gotoAngle = (target, input) => {
     adapter.calls.push(`move:${target}`);
     signal = input;
     return new Promise<void>(() => {});
@@ -660,32 +719,30 @@ test('Servo creation, calibration, arrows and slider use the provider path', asy
   await key(forward, 'keydown', 'Enter');
   assert.equal(adapter.calls.at(-1), 'move:40');
   await key(forward, 'keydown', 'Enter', { repeat: true });
-  assert.equal(adapter.calls.at(-1), 'move:40');
+  await click(button('Backward'));
+  assert.equal(
+    adapter.calls.filter((call) => call.startsWith('move:')).length,
+    1
+  );
   await key(forward, 'keyup', 'Enter');
-  assert.equal(adapter.calls.at(-1), 'move:40');
-  assert.equal(signal?.aborted, false);
   await click(button('Stop'));
   assert.equal(signal?.aborted, true);
-  adapter.driver.moveTo = async (target) => {
+  position = -18;
+  adapter.driver.absoluteAngle.gotoAngle = async (target) => {
     adapter.calls.push(`move:${target}`);
   };
   await click(button('Backward'));
   assert.equal(adapter.calls.at(-1), 'move:-20');
-  await act(() =>
-    view.api.openModal('createControl', { uuid: hub.uuid, port: 'A' })
-  );
-  await click(button('Choose Motor slider - Servo'));
-  await click(button('Create Motor slider - Servo, 1 by 2'));
-  const range = query(document, 'input[aria-label="Servo target position"]');
-  await setInput(range, 50);
-  assert.equal(adapter.calls.at(-1), 'move:10');
+  position = 0;
+  await click(forward);
+  assert.equal(adapter.calls.at(-1), 'move:15');
 });
 
-test('calibration cancellation from settings aborts and leaves Servo disabled', async (t) => {
+test('a Step-only motor can switch an existing arrow from Speed to Step and back', async (t) => {
   const adapter = fake();
+  adapter.driver.finiteAngle = { minDegrees: 1, maxDegrees: 90 };
   const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
+    positionDriverFactory: () => adapter.driver,
     render: () =>
       React.createElement(
         React.Fragment,
@@ -696,43 +753,135 @@ test('calibration cancellation from settings aborts and leaves Servo disabled', 
   });
   fakeHub();
   await act(() => view.api.addHub());
-  await create(view, 'arrows', 'A', { options: { mode: 'servo' } });
-  await click(button('Configure Motor arrows'));
-  await click(query(document, '[role="dialog"] input[type="checkbox"]'));
-  await click(button('Start calibration'));
-  await click(button('Cancel calibration and stop'));
-  assert.equal(adapter.pending[0].signal.aborted, true);
-  adapter.pending[0].resolve({ kind: 'endpoint', position: -20 });
-  await act(flush);
-  assert.equal(adapter.pending.length, 1);
-  await click(button('Cancel'));
-  assert.equal(asButton(button('Forward')).disabled, true);
+  const arrows = await create(view, 'arrows', 'A');
+  for (const [current, next] of [
+    ['speed', 'step'],
+    ['step', 'speed'],
+  ]) {
+    await click(button('Configure Motor arrows'));
+    const select = query(document, '[role="dialog"] select');
+    assert.ok(select instanceof window.HTMLSelectElement);
+    assert.equal(select.value, current);
+    assert.deepEqual(
+      Array.from(select.options, (option) => option.value),
+      ['speed', 'step']
+    );
+    await setInput(select, next);
+    await click(button('Save'));
+    const saved = view.api.controls.get(arrows.id);
+    assert.ok(saved?.type === 'arrows');
+    assert.equal(saved.options.mode, next);
+  }
 });
 
-test('changing mode updates the tile cue without starting motion', async (t) => {
+test('Step rejects unsupported adapters and invalid or unsupported angles', async (t) => {
   const adapter = fake();
   const view = await mount(t, {
-    positionDriverFactory: (_hub, device) =>
-      device.portName === 'A' ? adapter.driver : undefined,
-    render: () =>
-      React.createElement(
-        React.Fragment,
-        null,
-        React.createElement(Grid),
-        React.createElement(Modal)
-      ),
+    positionDriverFactory: () => adapter.driver,
   });
   const hub = fakeHub();
   await act(() => view.api.addHub());
-  await create(view, 'arrows');
-  await click(button('Configure Motor arrows'));
-  await setInput(query(document, '[role="dialog"] select'), 'servo');
-  await click(button('Save'));
-  assert.ok(document.querySelector('[data-motor-mode="servo"]'));
-  await click(button('Configure Motor arrows'));
-  await setInput(query(document, '[role="dialog"] select'), 'speed');
-  await click(button('Save'));
-  assert.ok(document.querySelector('[data-motor-mode="speed"]'));
-  assert.equal(adapter.pending.length, 0);
-  assert.ok(hub.devices.A.speeds.every(([value]) => value === 0));
+  await act(async () => {
+    await assert.rejects(
+      view.api.create({
+        type: 'arrows',
+        uuid: hub.uuid,
+        port: 'A',
+        options: { mode: 'step' },
+      }),
+      /not available/
+    );
+  });
+  adapter.driver.finiteAngle = {
+    minDegrees: 1,
+    maxDegrees: 90,
+  };
+  for (const angle of [0, -1, NaN, Infinity, 91]) {
+    await act(async () => {
+      await assert.rejects(
+        view.api.create({
+          type: 'arrows',
+          uuid: hub.uuid,
+          port: 'A',
+          options: { mode: 'step', angle },
+        }),
+        /angle/i
+      );
+    });
+  }
+  assert.equal(adapter.calls.length, 0);
+});
+
+test('Stop cancels pending Step feedback and late feedback cannot move', async (t) => {
+  const adapter = fake();
+  let release: ((position: number) => void) | undefined;
+  adapter.driver.finiteAngle = {
+    minDegrees: 1,
+    maxDegrees: 90,
+  };
+  adapter.driver.absoluteAngle.readPosition = () =>
+    new Promise((resolve) => {
+      release = resolve;
+    });
+  const view = await mount(t, {
+    positionDriverFactory: () => adapter.driver,
+  });
+  const hub = fakeHub();
+  hub.devices.D = fakeDevice('D');
+  hub.ports.push('D');
+  await act(() => view.api.addHub());
+  const step = await create(view, 'arrows', 'A', { options: { mode: 'step' } });
+  let pending: Promise<void> | undefined;
+  await act(async () => {
+    pending = view.api.step(step.id, 1);
+  });
+  assert.ok(release);
+  await act(async () => {
+    await view.api.speed(step.id, 0);
+    await pending;
+  });
+  await act(async () => {
+    release?.(0);
+    await flush();
+  });
+  assert.equal(
+    adapter.calls.some((call) => call.startsWith('move:')),
+    false
+  );
+  for (const invalid of [NaN, 41]) {
+    adapter.driver.absoluteAngle.readPosition = async () => invalid;
+    await act(async () => {
+      await assert.rejects(view.api.step(step.id, 1), /feedback/);
+    });
+  }
+  adapter.driver.absoluteAngle.readPosition = () =>
+    new Promise((resolve) => {
+      release = resolve;
+    });
+  await act(async () => {
+    pending = view.api.step(step.id, -1);
+  });
+  await act(async () => {
+    await view.api.update(step.id, { port: 'D' });
+    await pending;
+  });
+  await act(async () => {
+    release?.(0);
+    await flush();
+  });
+  assert.equal(
+    adapter.calls.some((call) => call.startsWith('move:')),
+    false
+  );
+  await act(async () => {
+    await view.api.disconnect(hub.uuid);
+  });
+  const replacement = fakeHub();
+  replacement.devices.D = fakeDevice('D');
+  replacement.ports.push('D');
+  await act(() => view.api.addHub());
+  assert.equal(
+    adapter.calls.some((call) => call.startsWith('move:')),
+    false
+  );
 });

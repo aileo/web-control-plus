@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Box, Button, Typography } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { useMotorControl, usePositionControl } from '../../../core/hooks';
 import Error from '../shared/Error';
+import useServoRelease from '../shared/useServoRelease';
 import type { ControlOf } from '../../../core/types';
 import SliderFace, { RangeInput } from '../shared/SliderFace';
 
@@ -151,10 +152,18 @@ function SpeedSlider({ control }: { control: ControlOf<'slider'> }) {
 }
 
 function ServoSlider({ control }: { control: ControlOf<'slider'> }) {
-  const { state, available, ready, move, stop, error } = usePositionControl(
-    control.id
-  );
-  const target = Math.round((state?.fraction ?? 0.5) * 100);
+  const { state, reference, available, ready, move, center, error } =
+    usePositionControl(control.id, true);
+  const autoReturn = control.options.autoReturnToCenter;
+  const release = useServoRelease(autoReturn, reference, center);
+  const { servoMin, servoMax } = control.options;
+  const fraction =
+    state?.target != null &&
+    typeof servoMin === 'number' &&
+    typeof servoMax === 'number'
+      ? (state.target - servoMin) / (servoMax - servoMin)
+      : 0.5;
+  const target = Math.round(Math.max(0, Math.min(1, fraction)) * 100);
   const vertical = control.w < control.h;
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
@@ -171,26 +180,60 @@ function ServoSlider({ control }: { control: ControlOf<'slider'> }) {
               max={100}
               vertical={vertical}
               value={target}
-              disabled={!ready}
+              disabled={!ready && !(autoReturn && reference)}
+              aria-valuetext={
+                state?.target == null
+                  ? 'Not active'
+                  : `Requested ${state.target} degrees`
+              }
               onChange={(event) => {
-                void move(Number(event.target.value) / 100);
+                if (ready) void move(Number(event.target.value) / 100);
               }}
+              onPointerDown={(event: React.PointerEvent<HTMLInputElement>) => {
+                if (
+                  ready &&
+                  event.button === 0 &&
+                  event.isPrimary &&
+                  release.begin(event.pointerId)
+                )
+                  event.currentTarget.setPointerCapture?.(event.pointerId);
+              }}
+              onPointerUp={(event: React.PointerEvent<HTMLInputElement>) =>
+                release.release(event.pointerId)
+              }
+              onPointerCancel={(event: React.PointerEvent<HTMLInputElement>) =>
+                release.cancel(event.pointerId)
+              }
+              onLostPointerCapture={(
+                event: React.PointerEvent<HTMLInputElement>
+              ) => release.cancel(event.pointerId)}
+              onKeyDown={(event: React.KeyboardEvent<HTMLInputElement>) => {
+                if (ready && speedKeys.includes(event.key))
+                  release.begin(event.key);
+              }}
+              onKeyUp={(event: React.KeyboardEvent<HTMLInputElement>) =>
+                release.release(event.key)
+              }
+              onBlur={release.clear}
             />
           }
         />
       </Box>
-      {!ready && (
-        <Typography variant="caption">Calibrate in settings</Typography>
+      {state?.target != null && (
+        <Typography variant="caption">Requested: {state.target}°</Typography>
       )}
-      <Button
-        size="small"
-        disabled={!available}
-        onClick={() => {
-          void stop();
-        }}
-      >
-        Stop
-      </Button>
+      {state &&
+        state.target == null &&
+        !state.active &&
+        available &&
+        !error && (
+          <Typography variant="caption">
+            Select Servo again to reset zero
+          </Typography>
+        )}
+      {!available && (
+        <Typography variant="caption">Servo unavailable</Typography>
+      )}
       <Error error={error} />
     </Box>
   );
