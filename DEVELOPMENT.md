@@ -408,9 +408,10 @@ Avoid library wrappers that switch input modes or omit their write promise.
 Hardware readback is not available; command completion is app-set state only.
 Reconnect does not replay selections; normal hub startup coloring is preserved.
 
-Power `onKey`/`offKey` default to empty strings and use the existing dispatcher
-with explicit action identities. They participate in same-output conflict
-validation/deduplication but never in motor speed or release/safety-stop paths.
+Power `onKey`/`offKey`/`toggleKey` default to empty strings and use the existing
+dispatcher with explicit action identities. They participate in same-output
+conflict validation/deduplication but never in motor speed or
+release/safety-stop paths.
 `led-controls.test.ts` covers payloads, state, races, mode ownership, and UI
 using simulated devices, not physical hardware.
 

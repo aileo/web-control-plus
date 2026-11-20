@@ -158,7 +158,9 @@ export function useControlKeyboard({
       current.keyPresses.set(token, entries);
       entries.forEach(({ id, target, device, speed, delta, owner, action }) => {
         if (action) {
-          actions.light(id, { on: action === 'on' }, target).catch(() => {
+          const isOn = device.commands.light?.on;
+          const on = action === 'on' || (action === 'toggle' && !isOn);
+          actions.light(id, { on }, target).catch(() => {
             // The action already reports its failure to the control and board.
           });
           return;
